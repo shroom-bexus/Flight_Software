@@ -28,11 +28,14 @@ void setup()
     Serial.println("       SHROOM Flight Software");
     Serial.println("====================================");
 
-#if FLIGHT_PRIMARY
+    #if FLIGHT_PRIMARY
     Serial.println("Target: PRIMARY");
-#elif FLIGHT_SECONDARY
+    #elif FLIGHT_SECONDARY
     Serial.println("Target: SECONDARY");
-#endif
+    #endif
+
+    Serial.print("Version: ");
+    Serial.println(FLIGHT_VERSION);
 
     Serial.println();
 
