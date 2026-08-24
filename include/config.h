@@ -61,4 +61,11 @@
 // #define MAX31865_CS_6 ...
 // TODO: Replace with the actual chip-select pins.
 
+// ============================================================================
+// WSEN-PADS
+// ============================================================================
+
+#define WSEN_PADS_ADDRESS    0x5D
+#define WSEN_PADS_ODR_HZ     10
+
 #endif //FLIGHT_PRIMARY_CONFIG_H

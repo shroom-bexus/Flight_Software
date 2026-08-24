@@ -58,7 +58,7 @@ static constexpr float referenceResistors[MAX31865_SENSOR_COUNT] =
 static float temperatures[MAX31865_SENSOR_COUNT];
 
 
-bool init_temp()
+bool max31865_init()
 {
     bool success = true;
 
@@ -82,7 +82,7 @@ bool init_temp()
 }
 
 
-void update_temp()
+void max31865_update()
 {
     /**
      * Read every configured MAX31865 once.
@@ -108,7 +108,7 @@ void update_temp()
 }
 
 
-float get_temp(TempSensor sensor)
+float max31865_get_temperature(TempSensor sensor)
 {
     /**
      * Convert the strongly typed TempSensor enum into an array index.
@@ -118,5 +118,5 @@ float get_temp(TempSensor sensor)
      */
     const auto index = static_cast<uint8_t>(sensor);
 
-    return temperatures[index];
+    return temperatures[index]+ 273.15f;
 }

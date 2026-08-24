@@ -50,7 +50,7 @@ enum class TempSensor : uint8_t
  * @return true  All sensors initialized successfully.
  * @return false At least one sensor failed to initialize.
  */
-bool init_temp();
+bool max31865_init();
 
 
 /**
@@ -65,7 +65,7 @@ bool init_temp();
  * get_temp() only returns these stored values and does not trigger a new
  * measurement.
  */
-void update_temp();
+void max31865_update();
 
 
 /**
@@ -76,9 +76,9 @@ void update_temp();
  *
  * @param sensor Temperature sensor to read.
  *
- * @return Last measured temperature in degrees Celsius.
+ * @return Last measured temperature in degrees K.
  */
-float get_temp(TempSensor sensor);
+float max31865_get_temperature(TempSensor sensor);
 
 
 #endif // SHROOMV1_MAX31865_H
