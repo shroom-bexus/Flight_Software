@@ -5,8 +5,8 @@
 // -----------------------------------
 // BEXUS - Student Balloon Experiment
 
-#ifndef SHROOMV1_MAX31865_H
-#define SHROOMV1_MAX31865_H
+#ifndef FLIGHT_SOFTWARE_MAX31865_H
+#define FLIGHT_SOFTWARE_MAX31865_H
 
 #include <Arduino.h>
 
@@ -81,7 +81,7 @@ void max31865_update();
 float max31865_get_temperature(TempSensor sensor);
 
 
-#endif // SHROOMV1_MAX31865_H
+#endif // FLIGHT_SOFTWARE_MAX31865_H
 
 
 

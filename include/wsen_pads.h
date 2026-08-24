@@ -5,8 +5,8 @@
 // -----------------------------------
 // BEXUS - Student Balloon Experiment
 
-#ifndef FLIGHT_PRIMARY_WSEN_PADS_H
-#define FLIGHT_PRIMARY_WSEN_PADS_H
+#ifndef FLIGHT_SOFTWARE_WSEN_PADS_H
+#define FLIGHT_SOFTWARE_WSEN_PADS_H
 
 //#include <Arduino.h>
 
@@ -65,4 +65,4 @@ float wsen_pads_get_temperature();
 bool wsen_pads_data_valid();
 
 
-#endif //FLIGHT_PRIMARY_WSEN_PADS_H
+#endif //FLIGHT_SOFTWARE_WSEN_PADS_H

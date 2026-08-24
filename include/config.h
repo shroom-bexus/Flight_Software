@@ -26,8 +26,8 @@
  *   - Logging and telemetry intervals
  */
 
-#ifndef FLIGHT_PRIMARY_CONFIG_H
-#define FLIGHT_PRIMARY_CONFIG_H
+#ifndef FLIGHT_SOFTWARE_CONFIG_H
+#define FLIGHT_SOFTWARE_CONFIG_H
 
 // ============================================================================
 // MAX31865 temperature sensors
@@ -68,4 +68,4 @@
 #define WSEN_PADS_ADDRESS    0x5D
 #define WSEN_PADS_ODR_HZ     10
 
-#endif //FLIGHT_PRIMARY_CONFIG_H
+#endif //FLIGHT_SOFTWARE_CONFIG_H
