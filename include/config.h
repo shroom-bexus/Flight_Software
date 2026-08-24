@@ -6,7 +6,7 @@
 // BEXUS - Student Balloon Experiment
 
 /**
-* @file config.h
+ * @file config.h
  * @brief Central configuration file for the SHROOM experiment firmware.
  *
  * Contains compile-time configuration parameters used throughout the project,
@@ -15,19 +15,48 @@
  *
  * This file should contain configuration values only.
  * Hardware drivers and application logic must not be implemented here.
- *
- * Configuration includes:
- *   - Sensor count and interface configuration
- *   - GPIO and chip-select pins
- *   - UART, SPI, and I2C configuration
- *   - Sensor sampling intervals
- *   - Heater configuration
- *   - Thermal controller parameters
- *   - Logging and telemetry intervals
  */
 
 #ifndef FLIGHT_SOFTWARE_CONFIG_H
 #define FLIGHT_SOFTWARE_CONFIG_H
+
+
+// ============================================================================
+// Build target
+// ============================================================================
+
+// FLIGHT_PRIMARY and FLIGHT_SECONDARY are defined in platformio.ini.
+
+#ifndef FLIGHT_PRIMARY
+#define FLIGHT_PRIMARY 0
+#endif
+
+#ifndef FLIGHT_SECONDARY
+#define FLIGHT_SECONDARY 0
+#endif
+
+// Exactly one target must be selected.
+#if (FLIGHT_PRIMARY + FLIGHT_SECONDARY) != 1
+#error "Exactly one SHROOM build target must be selected."
+#endif
+
+
+// ============================================================================
+// System features
+// ============================================================================
+
+#if FLIGHT_PRIMARY
+
+#define ENABLE_ETHERNET        1
+#define ENABLE_TELEMETRY       1
+
+#elif FLIGHT_SECONDARY
+
+#define ENABLE_ETHERNET        0
+#define ENABLE_TELEMETRY       0
+
+#endif
+
 
 // ============================================================================
 // MAX31865 temperature sensors
@@ -53,7 +82,7 @@
 #define MAX31865_SPI_BUS SPI
 
 // Chip-select pins
- #define MAX31865_CS_1 16
+#define MAX31865_CS_1 16
 // #define MAX31865_CS_2 ...
 // #define MAX31865_CS_3 ...
 // #define MAX31865_CS_4 ...
@@ -61,11 +90,13 @@
 // #define MAX31865_CS_6 ...
 // TODO: Replace with the actual chip-select pins.
 
+
 // ============================================================================
-// WSEN-PADS
+// WSEN-PADS pressure sensor
 // ============================================================================
 
 #define WSEN_PADS_ADDRESS    0x5D
 #define WSEN_PADS_ODR_HZ     10
 
-#endif //FLIGHT_SOFTWARE_CONFIG_H
+
+#endif // FLIGHT_SOFTWARE_CONFIG_H
