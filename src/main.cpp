@@ -17,7 +17,7 @@
 #include "max31865.h"
 #include "wsen_pads.h"
 #include "logo.h"
-
+#include "wsen_hids.h"
 
 void setup()
 {
@@ -45,6 +45,7 @@ void setup()
 
     max31865_init();
     wsen_pads_init();
+    wsen_hids_init();
 
     Serial.println("Initialization complete.");
     Serial.println();
@@ -59,6 +60,7 @@ void loop()
 
     max31865_update();
     wsen_pads_update();
+    wsen_hids_update();
 
     // ------------------------------------------------------------------------
     // Debug output
@@ -73,7 +75,12 @@ void loop()
     Serial.print("WSEN-PADS pressure: ");
     Serial.println(wsen_pads_get_pressure());
 
+    Serial.print("WSEN-HIDS temperature:");
+    Serial.println(wsen_hids_get_temperature());
+    Serial.print("WSEN-HIDS humidity: ");
+    Serial.println(wsen_hids_get_humidity());
+
     Serial.println();
 
-    delay(500);
+    delay(2000);
 }

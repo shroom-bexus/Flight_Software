@@ -101,4 +101,16 @@
 #define WSEN_PADS_ODR_HZ     10
 
 
+// ============================================================================
+// WSEN-HIDS - Humidity and temperature sensor
+// ============================================================================
+
+constexpr bool WSEN_HIDS_ENABLED = true;
+
+// Fixed I2C address
+constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
+
+// Sensor read interval
+constexpr uint32_t WSEN_HIDS_UPDATE_INTERVAL_MS = 1000;
+
 #endif // FLIGHT_SOFTWARE_CONFIG_H
