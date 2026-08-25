@@ -16,6 +16,7 @@
 #include "config.h"
 #include "max31865.h"
 #include "wsen_pads.h"
+#include "logo.h"
 
 
 void setup()
@@ -25,9 +26,7 @@ void setup()
     delay(500);
 
     Serial.println();
-    Serial.println("====================================");
-    Serial.println("       SHROOM Flight Software");
-    Serial.println("====================================");
+    Serial.print(SHROOM_LOGO);
 
     #if FLIGHT_PRIMARY
     Serial.println("Target: PRIMARY");
