@@ -78,10 +78,6 @@ void loop()
         max31865_update();
         Serial.print("MAX31865 1 temperature: ");
         Serial.println(max31865_get_temperature(TempSensor::TEMP_1));
-        char timestamp[24];
-
-
-
     }
 
     // WSEN_PADS

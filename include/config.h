@@ -52,13 +52,45 @@
 
 #define ENABLE_ETHERNET        1
 #define ENABLE_TELEMETRY       1
+#define ENABLE_SD_LOGGING      1
+
+// Sensors connected to the primary
+#define ENABLE_MAX31865        1
+#define ENABLE_WSEN_PADS       1
+#define ENABLE_WSEN_HIDS       1
+#define ENABLE_WSEN_ISDS       1
+#define ENABLE_AIRDOS          0
+
 
 #elif FLIGHT_SECONDARY
 
 #define ENABLE_ETHERNET        0
 #define ENABLE_TELEMETRY       0
+#define ENABLE_SD_LOGGING      1
+
+// Sensors connected to the secondary
+#define ENABLE_MAX31865        0
+#define ENABLE_WSEN_PADS       0
+#define ENABLE_WSEN_HIDS       0
+#define ENABLE_WSEN_ISDS       0
+#define ENABLE_AIRDOS          1
 
 #endif
+
+
+// ============================================================================
+// Data logging
+// ============================================================================
+
+// Select which available sensors are written to the SD card.
+// Useful for disabling individual logs during testing.
+
+#define LOG_MAX31865       1
+#define LOG_WSEN_PADS      1
+#define LOG_WSEN_HIDS      1
+#define LOG_WSEN_ISDS      0
+#define LOG_AIRDOS         1
+
 
 // ============================================================================
 // Sensor sampling intervals
@@ -121,12 +153,7 @@
 // WSEN-HIDS - Humidity and temperature sensor
 // ============================================================================
 
-constexpr bool WSEN_HIDS_ENABLED = true;
-
 // Fixed I2C address
 constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
-
-// Sensor read interval
-constexpr uint32_t WSEN_HIDS_UPDATE_INTERVAL_MS = 1000;
 
 #endif // FLIGHT_SOFTWARE_CONFIG_H
