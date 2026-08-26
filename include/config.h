@@ -59,6 +59,21 @@
 
 #endif
 
+// ============================================================================
+// Sensor sampling intervals
+// ============================================================================
+
+// MAX31865 / PT1000
+#define MAX31865_SAMPLE_PERIOD_MS 1000
+
+// WSEN-PADS pressure sensor
+#define WSEN_PADS_SAMPLE_PERIOD_MS 2000
+
+// WSEN-HIDS humidity sensor
+#define WSEN_HIDS_SAMPLE_PERIOD_MS 4000
+
+// WSEN-ISDS IMU
+#define WSEN_ISDS_SAMPLE_PERIOD_MS 10
 
 // ============================================================================
 // MAX31865 temperature sensors
