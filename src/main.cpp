@@ -1,3 +1,4 @@
+
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -19,6 +20,7 @@
 #include "logo.h"
 #include "wsen_hids.h"
 #include "elapsedMillis.h"
+#include "rtc.h"
 
 // Sampling timers
 elapsedMillis max31865Timer;
@@ -76,6 +78,11 @@ void loop()
         max31865_update();
         Serial.print("MAX31865 1 temperature: ");
         Serial.println(max31865_get_temperature(TempSensor::TEMP_1));
+        char timestamp[24];
+
+        Serial.println(rtc_get_timestamp(timestamp, sizeof(timestamp)));
+
+
     }
 
     // WSEN_PADS
