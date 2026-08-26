@@ -8,7 +8,7 @@
 //
 // Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
-#include "data_logger.h"
+#include "logger.h"
 
 #include <SD.h>
 
@@ -17,34 +17,111 @@
 
 
 // ============================================================================
-// Configuration
+// Log files
 // ============================================================================
 
-// How often buffered data is physically written to the SD card
-static const uint32_t FLUSH_INTERVAL_MS = 1000;
+// Files only exist in firmware builds where they are actually needed.
+
+#if ENABLE_SD_LOGGING && ENABLE_MAX31865 && LOG_MAX31865
+static File max31865File;
+#endif
+
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS && LOG_WSEN_PADS
+static File wsenPadsFile;
+#endif
+
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+static File wsenHidsFile;
+#endif
+
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+static File wsenIsdsFile;
+#endif
+
+#if ENABLE_SD_LOGGING && ENABLE_AIRDOS && LOG_AIRDOS
+static File airdosFile;
+#endif
 
 
-// ============================================================================
-// Files
-// ============================================================================
-
-static File sensorFile;
-
-// One file for each AIRDOS sensor
-static File airdosFiles[AIRDOS_SENSOR_COUNT];
-
-
-// Time of the last SD flush
+// Time of the last forced SD flush
 static uint32_t lastFlushTime = 0;
 
 
 // ============================================================================
-// Initialization
+// Helper functions
+// ============================================================================
+
+#if ENABLE_SD_LOGGING
+
+/**
+ * @brief Open a log file and write its header if it is a new file.
+ */
+static bool open_log_file(
+    File& file,
+    const char* filename,
+    const char* header
+)
+{
+    file = SD.open(filename, FILE_WRITE);
+
+    if (!file)
+    {
+        Serial.print("ERROR: Could not open ");
+        Serial.println(filename);
+
+        return false;
+    }
+
+    // If the file is empty, write the CSV header.
+    if (file.size() == 0)
+    {
+        file.println(header);
+        file.flush();
+    }
+
+    return true;
+}
+
+
+/**
+ * @brief Write the timestamp and millis() prefix used by all logs.
+ *
+ * Result:
+ * 2026-08-26T18:42:15Z,123456,
+ */
+static void write_timestamp(File& file)
+{
+    char timestamp[24];
+
+    rtc_get_timestamp(
+        timestamp,
+        sizeof(timestamp)
+    );
+
+    file.print(timestamp);
+    file.print(',');
+
+    file.print(millis());
+    file.print(',');
+}
+
+#endif
+
+
+// ============================================================================
+// Logger initialization
 // ============================================================================
 
 bool logger_init()
 {
-    // Initialize the Teensy 4.1 built-in SD card
+#if !ENABLE_SD_LOGGING
+
+    // SD logging is disabled for this firmware build.
+    return true;
+
+#else
+
+    // Initialize the Teensy 4.1 built-in SD card.
     if (!SD.begin(BUILTIN_SDCARD))
     {
         Serial.println("ERROR: SD card initialization failed");
@@ -55,101 +132,245 @@ bool logger_init()
 
 
     // ------------------------------------------------------------------------
-    // Main sensor file
+    // MAX31865
     // ------------------------------------------------------------------------
 
-    sensorFile = SD.open("sensors.csv", FILE_WRITE);
+#if ENABLE_MAX31865 && LOG_MAX31865
 
-    if (!sensorFile)
+    if (!open_log_file(
+        max31865File,
+        "max31865.csv",
+        "timestamp,time_ms,sensor,temperature_K"
+    ))
     {
-        Serial.println("ERROR: Could not open sensors.csv");
         return false;
     }
 
-    // Write the CSV header only if the file is new
-    if (sensorFile.size() == 0)
-    {
-        sensorFile.println(
-            "timestamp,time_ms,temperature_K,pressure_Pa"
-        );
-
-        sensorFile.flush();
-    }
+#endif
 
 
     // ------------------------------------------------------------------------
-    // AIRDOS files
+    // WSEN-PADS
     // ------------------------------------------------------------------------
 
-    for (uint8_t i = 0; i < AIRDOS_SENSOR_COUNT; i++)
+#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+
+    if (!open_log_file(
+        wsenPadsFile,
+        "wsen_pads.csv",
+        "timestamp,time_ms,temperature_K,pressure_Pa"
+    ))
     {
-        char filename[24];
-
-        snprintf(
-            filename,
-            sizeof(filename),
-            "airdos_%u.log",
-            i + 1
-        );
-
-        airdosFiles[i] = SD.open(filename, FILE_WRITE);
-
-        if (!airdosFiles[i])
-        {
-            Serial.print("ERROR: Could not open ");
-            Serial.println(filename);
-
-            return false;
-        }
+        return false;
     }
 
+#endif
 
-    Serial.println("Logger initialized");
 
+    // ------------------------------------------------------------------------
+    // WSEN-HIDS
+    // ------------------------------------------------------------------------
+
+#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+
+    if (!open_log_file(
+        wsenHidsFile,
+        "wsen_hids.csv",
+        "timestamp,time_ms,temperature_K,humidity_percent"
+    ))
+    {
+        return false;
+    }
+
+#endif
+
+
+    // ------------------------------------------------------------------------
+    // WSEN-ISDS
+    // ------------------------------------------------------------------------
+
+#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+
+    if (!open_log_file(
+        wsenIsdsFile,
+        "wsen_isds.csv",
+        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"
+    ))
+    {
+        return false;
+    }
+
+#endif
+
+
+    // ------------------------------------------------------------------------
+    // AIRDOS
+    // ------------------------------------------------------------------------
+
+#if ENABLE_AIRDOS && LOG_AIRDOS
+
+    if (!open_log_file(
+        airdosFile,
+        "airdos.csv",
+        "timestamp,time_ms,sensor,data"
+    ))
+    {
+        return false;
+    }
+
+#endif
+
+
+    Serial.println("Data logger initialized");
     return true;
+
+#endif
 }
 
 
 // ============================================================================
-// Regular sensor data
+// MAX31865
 // ============================================================================
 
-void logger_log_sensor_data(
+void logger_log_max31865(
+    uint8_t sensorIndex,
+    float temperature_K
+)
+{
+#if ENABLE_SD_LOGGING && ENABLE_MAX31865 && LOG_MAX31865
+
+    if (!max31865File)
+        return;
+
+    write_timestamp(max31865File);
+
+    max31865File.print(sensorIndex);
+    max31865File.print(',');
+
+    max31865File.println(temperature_K, 3);
+
+#else
+
+    // Prevent unused-parameter compiler warnings.
+    (void)sensorIndex;
+    (void)temperature_K;
+
+#endif
+}
+
+
+// ============================================================================
+// WSEN-PADS
+// ============================================================================
+
+void logger_log_wsen_pads(
     float temperature_K,
     float pressure_Pa
 )
 {
-    if (!sensorFile)
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS && LOG_WSEN_PADS
+
+    if (!wsenPadsFile)
         return;
 
+    write_timestamp(wsenPadsFile);
 
-    // Get the current UTC timestamp from the RTC
-    char timestamp[24];
+    wsenPadsFile.print(temperature_K, 3);
+    wsenPadsFile.print(',');
 
-    rtc_get_timestamp(
-        timestamp,
-        sizeof(timestamp)
-    );
+    wsenPadsFile.println(pressure_Pa, 2);
 
+#else
 
-    // Example:
-    // 2026-08-26T15:42:31Z,12345,298.153,95482.10
+    (void)temperature_K;
+    (void)pressure_Pa;
 
-    sensorFile.print(timestamp);
-    sensorFile.print(',');
-
-    sensorFile.print(millis());
-    sensorFile.print(',');
-
-    sensorFile.print(temperature_K, 3);
-    sensorFile.print(',');
-
-    sensorFile.println(pressure_Pa, 2);
+#endif
 }
 
 
 // ============================================================================
-// AIRDOS UART data
+// WSEN-HIDS
+// ============================================================================
+
+void logger_log_wsen_hids(
+    float temperature_K,
+    float humidity_percent
+)
+{
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+
+    if (!wsenHidsFile)
+        return;
+
+    write_timestamp(wsenHidsFile);
+
+    wsenHidsFile.print(temperature_K, 3);
+    wsenHidsFile.print(',');
+
+    wsenHidsFile.println(humidity_percent, 2);
+
+#else
+
+    (void)temperature_K;
+    (void)humidity_percent;
+
+#endif
+}
+
+
+// ============================================================================
+// WSEN-ISDS
+// ============================================================================
+
+void logger_log_wsen_isds(
+    float accelX,
+    float accelY,
+    float accelZ,
+    float gyroX,
+    float gyroY,
+    float gyroZ
+)
+{
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+
+    if (!wsenIsdsFile)
+        return;
+
+    write_timestamp(wsenIsdsFile);
+
+    wsenIsdsFile.print(accelX, 4);
+    wsenIsdsFile.print(',');
+
+    wsenIsdsFile.print(accelY, 4);
+    wsenIsdsFile.print(',');
+
+    wsenIsdsFile.print(accelZ, 4);
+    wsenIsdsFile.print(',');
+
+    wsenIsdsFile.print(gyroX, 4);
+    wsenIsdsFile.print(',');
+
+    wsenIsdsFile.print(gyroY, 4);
+    wsenIsdsFile.print(',');
+
+    wsenIsdsFile.println(gyroZ, 4);
+
+#else
+
+    (void)accelX;
+    (void)accelY;
+    (void)accelZ;
+    (void)gyroX;
+    (void)gyroY;
+    (void)gyroZ;
+
+#endif
+}
+
+
+// ============================================================================
+// AIRDOS
 // ============================================================================
 
 void logger_log_airdos(
@@ -157,64 +378,84 @@ void logger_log_airdos(
     const char* data
 )
 {
-    // Protect against an invalid sensor number
-    if (sensorIndex >= AIRDOS_SENSOR_COUNT)
+#if ENABLE_SD_LOGGING && ENABLE_AIRDOS && LOG_AIRDOS
+
+    if (!airdosFile)
         return;
 
-    if (!airdosFiles[sensorIndex])
-        return;
+    write_timestamp(airdosFile);
 
+    airdosFile.print(sensorIndex);
+    airdosFile.print(',');
 
-    // Get the current UTC timestamp
-    char timestamp[24];
+    // Store the received UART message.
+    airdosFile.println(data);
 
-    rtc_get_timestamp(
-        timestamp,
-        sizeof(timestamp)
-    );
+#else
 
+    (void)sensorIndex;
+    (void)data;
 
-    // Store the UART message without modifying it
-    //
-    // Example:
-    // 2026-08-26T15:42:31Z,12345,$ENV,...
-
-    airdosFiles[sensorIndex].print(timestamp);
-    airdosFiles[sensorIndex].print(',');
-
-    airdosFiles[sensorIndex].print(millis());
-    airdosFiles[sensorIndex].print(',');
-
-    airdosFiles[sensorIndex].println(data);
+#endif
 }
 
 
 // ============================================================================
-// SD card maintenance
+// Logger update
 // ============================================================================
 
 void logger_update()
 {
+#if ENABLE_SD_LOGGING
+
     const uint32_t currentTime = millis();
 
-
-    // Do not flush on every measurement.
-    // Frequent flushes unnecessarily slow down SD writes.
-    if (currentTime - lastFlushTime < FLUSH_INTERVAL_MS)
+    // Data is written continuously using File.print().
+    // flush() periodically makes sure all pending data is committed.
+    if (currentTime - lastFlushTime < SD_FLUSH_PERIOD_MS)
         return;
 
     lastFlushTime = currentTime;
 
 
-    // Flush regular sensor data
-    if (sensorFile)
-        sensorFile.flush();
+#if ENABLE_MAX31865 && LOG_MAX31865
+
+    if (max31865File)
+        max31865File.flush();
+
+#endif
 
 
-    // Flush all AIRDOS files
-    for (uint8_t i = 0; i < AIRDOS_SENSOR_COUNT; i++)
-    {
-        if (airdosFiles[i])
-            airdosFiles[i].flush();
-    }
+#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+
+    if (wsenPadsFile)
+        wsenPadsFile.flush();
+
+#endif
+
+
+#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+
+    if (wsenHidsFile)
+        wsenHidsFile.flush();
+
+#endif
+
+
+#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+
+    if (wsenIsdsFile)
+        wsenIsdsFile.flush();
+
+#endif
+
+
+#if ENABLE_AIRDOS && LOG_AIRDOS
+
+    if (airdosFile)
+        airdosFile.flush();
+
+#endif
+
+#endif
 }

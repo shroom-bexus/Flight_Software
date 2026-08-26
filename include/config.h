@@ -82,14 +82,15 @@
 // Data logging
 // ============================================================================
 
-// Select which available sensors are written to the SD card.
-// Useful for disabling individual logs during testing.
-
+// Select which available sensors are written to the SD card
 #define LOG_MAX31865       1
 #define LOG_WSEN_PADS      1
 #define LOG_WSEN_HIDS      1
 #define LOG_WSEN_ISDS      0
 #define LOG_AIRDOS         1
+
+// Force pending SD data to be synchronized every second
+#define SD_FLUSH_PERIOD_MS 1000
 
 
 // ============================================================================

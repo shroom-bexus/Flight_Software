@@ -75,7 +75,7 @@ bool wsen_hids_init()
     humidity = NAN;
 
 
-    if (!WSEN_HIDS_ENABLED)
+    if constexpr (!ENABLE_WSEN_HIDS)
     {
         return false;
     }
@@ -101,7 +101,7 @@ bool wsen_hids_init()
 
 bool wsen_hids_update()
 {
-    if (!WSEN_HIDS_ENABLED)
+    if constexpr (!ENABLE_WSEN_HIDS)
     {
         return false;
     }
@@ -135,9 +135,9 @@ bool wsen_hids_update()
     }
 
 
-    for (uint8_t i = 0; i < 6; ++i)
+    for (unsigned char & i : data)
     {
-        data[i] = Wire.read();
+        i = Wire.read();
     }
 
 
