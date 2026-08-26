@@ -80,7 +80,6 @@ void loop()
         Serial.println(max31865_get_temperature(TempSensor::TEMP_1));
         char timestamp[24];
 
-        Serial.println(rtc_get_timestamp(timestamp, sizeof(timestamp)));
 
 
     }

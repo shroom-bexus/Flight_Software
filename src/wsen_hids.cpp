@@ -11,7 +11,7 @@
 #include "wsen_hids.h"
 
 #include <Wire.h>
-#include <math.h>
+#include <cmath>
 
 #include "config.h"
 
