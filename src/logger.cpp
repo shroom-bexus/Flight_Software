@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -10,53 +9,55 @@
 
 #include "logger.h"
 
-#include <SD.h>
-
 #include "config.h"
 #include "rtc.h"
 
+#if ENABLE_SD_LOGGING
+#include <SD.h>
+#endif
+
+
+namespace
+{
+
+#if ENABLE_SD_LOGGING
 
 // ============================================================================
 // Log files
 // ============================================================================
 
-// Files only exist in firmware builds where they are actually needed.
-
-#if ENABLE_SD_LOGGING && ENABLE_MAX31865 && LOG_MAX31865
-static File max31865File;
+#if ENABLE_MAX31865 && LOG_MAX31865
+File max31865_file;
 #endif
 
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS && LOG_WSEN_PADS
-static File wsenPadsFile;
+#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+File wsen_pads_file;
 #endif
 
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
-static File wsenHidsFile;
+#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+File wsen_hids_file;
 #endif
 
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
-static File wsenIsdsFile;
+#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+File wsen_isds_file;
 #endif
 
-#if ENABLE_SD_LOGGING && ENABLE_AIRDOS && LOG_AIRDOS
-static File airdosFile;
+#if ENABLE_AIRDOS && LOG_AIRDOS
+File airdos_file;
 #endif
 
 
-// Time of the last forced SD flush
-static uint32_t lastFlushTime = 0;
+uint32_t last_flush_time = 0;
 
 
 // ============================================================================
 // Helper functions
 // ============================================================================
 
-#if ENABLE_SD_LOGGING
-
 /**
- * @brief Open a log file and write its header if it is a new file.
+ * @brief Open a log file and add the CSV header if the file is empty.
  */
-static bool open_log_file(
+bool open_log_file(
     File& file,
     const char* filename,
     const char* header
@@ -66,13 +67,10 @@ static bool open_log_file(
 
     if (!file)
     {
-        Serial.print("ERROR: Could not open ");
-        Serial.println(filename);
-
         return false;
     }
 
-    // If the file is empty, write the CSV header.
+    // Only write the header when creating a new file.
     if (file.size() == 0)
     {
         file.println(header);
@@ -84,12 +82,12 @@ static bool open_log_file(
 
 
 /**
- * @brief Write the timestamp and millis() prefix used by all logs.
+ * @brief Write the timestamp prefix shared by all log entries.
  *
- * Result:
- * 2026-08-26T18:42:15Z,123456,
+ * Format:
+ * UTC timestamp,milliseconds since boot,
  */
-static void write_timestamp(File& file)
+void write_timestamp(File& file)
 {
     char timestamp[24];
 
@@ -100,129 +98,113 @@ static void write_timestamp(File& file)
 
     file.print(timestamp);
     file.print(',');
-
     file.print(millis());
     file.print(',');
 }
 
-#endif
+
+/**
+ * @brief Flush a file if it is currently open.
+ */
+void flush_file(File& file)
+{
+    if (file)
+    {
+        file.flush();
+    }
+}
+
+#endif // ENABLE_SD_LOGGING
+
+} // namespace
 
 
 // ============================================================================
-// Logger initialization
+// Initialization
 // ============================================================================
 
 bool logger_init()
 {
 #if !ENABLE_SD_LOGGING
 
-    // SD logging is disabled for this firmware build.
     return true;
 
 #else
 
-    // Initialize the Teensy 4.1 built-in SD card.
     if (!SD.begin(BUILTIN_SDCARD))
     {
-        Serial.println("ERROR: SD card initialization failed");
         return false;
     }
 
-    Serial.println("SD card initialized");
+    bool success = true;
 
-
-    // ------------------------------------------------------------------------
-    // MAX31865
-    // ------------------------------------------------------------------------
 
 #if ENABLE_MAX31865 && LOG_MAX31865
 
     if (!open_log_file(
-        max31865File,
-        "max31865.csv",
-        "timestamp,time_ms,sensor,temperature_K"
-    ))
+            max31865_file,
+            "max31865.csv",
+            "timestamp,time_ms,sensor,temperature_K"))
     {
-        return false;
+        success = false;
     }
 
 #endif
 
-
-    // ------------------------------------------------------------------------
-    // WSEN-PADS
-    // ------------------------------------------------------------------------
 
 #if ENABLE_WSEN_PADS && LOG_WSEN_PADS
 
     if (!open_log_file(
-        wsenPadsFile,
-        "wsen_pads.csv",
-        "timestamp,time_ms,temperature_K,pressure_Pa"
-    ))
+            wsen_pads_file,
+            "wsen_pads.csv",
+            "timestamp,time_ms,temperature_K,pressure_Pa"))
     {
-        return false;
+        success = false;
     }
 
 #endif
 
-
-    // ------------------------------------------------------------------------
-    // WSEN-HIDS
-    // ------------------------------------------------------------------------
 
 #if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
 
     if (!open_log_file(
-        wsenHidsFile,
-        "wsen_hids.csv",
-        "timestamp,time_ms,temperature_K,humidity_percent"
-    ))
+            wsen_hids_file,
+            "wsen_hids.csv",
+            "timestamp,time_ms,temperature_K,humidity_percent"))
     {
-        return false;
+        success = false;
     }
 
 #endif
 
-
-    // ------------------------------------------------------------------------
-    // WSEN-ISDS
-    // ------------------------------------------------------------------------
 
 #if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
 
     if (!open_log_file(
-        wsenIsdsFile,
-        "wsen_isds.csv",
-        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"
-    ))
+            wsen_isds_file,
+            "wsen_isds.csv",
+            "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"))
     {
-        return false;
+        success = false;
     }
 
 #endif
 
-
-    // ------------------------------------------------------------------------
-    // AIRDOS
-    // ------------------------------------------------------------------------
 
 #if ENABLE_AIRDOS && LOG_AIRDOS
 
     if (!open_log_file(
-        airdosFile,
-        "airdos.csv",
-        "timestamp,time_ms,sensor,data"
-    ))
+            airdos_file,
+            "airdos.csv",
+            "timestamp,time_ms,sensor,data"))
     {
-        return false;
+        success = false;
     }
 
 #endif
 
 
-    Serial.println("Data logger initialized");
-    return true;
+    return success;
 
 #endif
 }
@@ -233,27 +215,27 @@ bool logger_init()
 // ============================================================================
 
 void logger_log_max31865(
-    uint8_t sensorIndex,
-    float temperature_K
+    uint8_t sensor_index,
+    float temperature_k
 )
 {
 #if ENABLE_SD_LOGGING && ENABLE_MAX31865 && LOG_MAX31865
 
-    if (!max31865File)
+    if (!max31865_file)
+    {
         return;
+    }
 
-    write_timestamp(max31865File);
+    write_timestamp(max31865_file);
 
-    max31865File.print(sensorIndex);
-    max31865File.print(',');
-
-    max31865File.println(temperature_K, 3);
+    max31865_file.print(sensor_index);
+    max31865_file.print(',');
+    max31865_file.println(temperature_k, 3);
 
 #else
 
-    // Prevent unused-parameter compiler warnings.
-    (void)sensorIndex;
-    (void)temperature_K;
+    (void)sensor_index;
+    (void)temperature_k;
 
 #endif
 }
@@ -264,26 +246,27 @@ void logger_log_max31865(
 // ============================================================================
 
 void logger_log_wsen_pads(
-    float temperature_K,
-    float pressure_Pa
+    float temperature_k,
+    float pressure_pa
 )
 {
 #if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS && LOG_WSEN_PADS
 
-    if (!wsenPadsFile)
+    if (!wsen_pads_file)
+    {
         return;
+    }
 
-    write_timestamp(wsenPadsFile);
+    write_timestamp(wsen_pads_file);
 
-    wsenPadsFile.print(temperature_K, 3);
-    wsenPadsFile.print(',');
-
-    wsenPadsFile.println(pressure_Pa, 2);
+    wsen_pads_file.print(temperature_k, 3);
+    wsen_pads_file.print(',');
+    wsen_pads_file.println(pressure_pa, 2);
 
 #else
 
-    (void)temperature_K;
-    (void)pressure_Pa;
+    (void)temperature_k;
+    (void)pressure_pa;
 
 #endif
 }
@@ -294,25 +277,26 @@ void logger_log_wsen_pads(
 // ============================================================================
 
 void logger_log_wsen_hids(
-    float temperature_K,
+    float temperature_k,
     float humidity_percent
 )
 {
 #if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
 
-    if (!wsenHidsFile)
+    if (!wsen_hids_file)
+    {
         return;
+    }
 
-    write_timestamp(wsenHidsFile);
+    write_timestamp(wsen_hids_file);
 
-    wsenHidsFile.print(temperature_K, 3);
-    wsenHidsFile.print(',');
-
-    wsenHidsFile.println(humidity_percent, 2);
+    wsen_hids_file.print(temperature_k, 3);
+    wsen_hids_file.print(',');
+    wsen_hids_file.println(humidity_percent, 2);
 
 #else
 
-    (void)temperature_K;
+    (void)temperature_k;
     (void)humidity_percent;
 
 #endif
@@ -324,46 +308,43 @@ void logger_log_wsen_hids(
 // ============================================================================
 
 void logger_log_wsen_isds(
-    float accelX,
-    float accelY,
-    float accelZ,
-    float gyroX,
-    float gyroY,
-    float gyroZ
+    float accel_x,
+    float accel_y,
+    float accel_z,
+    float gyro_x,
+    float gyro_y,
+    float gyro_z
 )
 {
 #if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
 
-    if (!wsenIsdsFile)
+    if (!wsen_isds_file)
+    {
         return;
+    }
 
-    write_timestamp(wsenIsdsFile);
+    write_timestamp(wsen_isds_file);
 
-    wsenIsdsFile.print(accelX, 4);
-    wsenIsdsFile.print(',');
-
-    wsenIsdsFile.print(accelY, 4);
-    wsenIsdsFile.print(',');
-
-    wsenIsdsFile.print(accelZ, 4);
-    wsenIsdsFile.print(',');
-
-    wsenIsdsFile.print(gyroX, 4);
-    wsenIsdsFile.print(',');
-
-    wsenIsdsFile.print(gyroY, 4);
-    wsenIsdsFile.print(',');
-
-    wsenIsdsFile.println(gyroZ, 4);
+    wsen_isds_file.print(accel_x, 4);
+    wsen_isds_file.print(',');
+    wsen_isds_file.print(accel_y, 4);
+    wsen_isds_file.print(',');
+    wsen_isds_file.print(accel_z, 4);
+    wsen_isds_file.print(',');
+    wsen_isds_file.print(gyro_x, 4);
+    wsen_isds_file.print(',');
+    wsen_isds_file.print(gyro_y, 4);
+    wsen_isds_file.print(',');
+    wsen_isds_file.println(gyro_z, 4);
 
 #else
 
-    (void)accelX;
-    (void)accelY;
-    (void)accelZ;
-    (void)gyroX;
-    (void)gyroY;
-    (void)gyroZ;
+    (void)accel_x;
+    (void)accel_y;
+    (void)accel_z;
+    (void)gyro_x;
+    (void)gyro_y;
+    (void)gyro_z;
 
 #endif
 }
@@ -374,26 +355,26 @@ void logger_log_wsen_isds(
 // ============================================================================
 
 void logger_log_airdos(
-    uint8_t sensorIndex,
+    uint8_t sensor_index,
     const char* data
 )
 {
 #if ENABLE_SD_LOGGING && ENABLE_AIRDOS && LOG_AIRDOS
 
-    if (!airdosFile)
+    if (!airdos_file)
+    {
         return;
+    }
 
-    write_timestamp(airdosFile);
+    write_timestamp(airdos_file);
 
-    airdosFile.print(sensorIndex);
-    airdosFile.print(',');
-
-    // Store the received UART message.
-    airdosFile.println(data);
+    airdos_file.print(sensor_index);
+    airdos_file.print(',');
+    airdos_file.println(data);
 
 #else
 
-    (void)sensorIndex;
+    (void)sensor_index;
     (void)data;
 
 #endif
@@ -401,60 +382,42 @@ void logger_log_airdos(
 
 
 // ============================================================================
-// Logger update
+// Periodic flush
 // ============================================================================
 
 void logger_update()
 {
 #if ENABLE_SD_LOGGING
 
-    const uint32_t currentTime = millis();
+    const uint32_t current_time = millis();
 
-    // Data is written continuously using File.print().
-    // flush() periodically makes sure all pending data is committed.
-    if (currentTime - lastFlushTime < SD_FLUSH_PERIOD_MS)
+    // Unsigned subtraction remains correct when millis() overflows.
+    if (current_time - last_flush_time < SD_FLUSH_PERIOD_MS)
+    {
         return;
+    }
 
-    lastFlushTime = currentTime;
+    last_flush_time = current_time;
 
 
 #if ENABLE_MAX31865 && LOG_MAX31865
-
-    if (max31865File)
-        max31865File.flush();
-
+    flush_file(max31865_file);
 #endif
-
 
 #if ENABLE_WSEN_PADS && LOG_WSEN_PADS
-
-    if (wsenPadsFile)
-        wsenPadsFile.flush();
-
+    flush_file(wsen_pads_file);
 #endif
-
 
 #if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
-
-    if (wsenHidsFile)
-        wsenHidsFile.flush();
-
+    flush_file(wsen_hids_file);
 #endif
-
 
 #if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
-
-    if (wsenIsdsFile)
-        wsenIsdsFile.flush();
-
+    flush_file(wsen_isds_file);
 #endif
 
-
 #if ENABLE_AIRDOS && LOG_AIRDOS
-
-    if (airdosFile)
-        airdosFile.flush();
-
+    flush_file(airdos_file);
 #endif
 
 #endif

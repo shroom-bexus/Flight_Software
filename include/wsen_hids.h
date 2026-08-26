@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -11,22 +10,24 @@
 #ifndef FLIGHT_SOFTWARE_WSEN_HIDS_H
 #define FLIGHT_SOFTWARE_WSEN_HIDS_H
 
-
 #include <Arduino.h>
 
 
 /**
- * @brief Initializes the WSEN-HIDS sensor.
+ * @brief Initialize the WSEN-HIDS sensor.
  *
- * Wire.begin() must already have been called.
+ * The I2C bus must already be initialized before calling this function.
  *
- * @return true if the sensor is reachable.
+ * @return true if the sensor responded successfully.
  */
 bool wsen_hids_init();
 
 
 /**
- * @brief Performs a new temperature and humidity measurement.
+ * @brief Perform a new temperature and humidity measurement.
+ *
+ * The new values are stored internally and can be accessed using the
+ * getter functions.
  *
  * @return true if a valid measurement was received.
  */
@@ -34,15 +35,19 @@ bool wsen_hids_update();
 
 
 /**
- * @brief Returns the latest temperature measurement.
+ * @brief Return the latest temperature measurement.
  *
- * @return Temperature in degrees Celsius.
+ * No new sensor measurement is performed.
+ *
+ * @return Temperature in Kelvin.
  */
 float wsen_hids_get_temperature();
 
 
 /**
- * @brief Returns the latest relative humidity measurement.
+ * @brief Return the latest relative humidity measurement.
+ *
+ * No new sensor measurement is performed.
  *
  * @return Relative humidity in percent.
  */
@@ -50,16 +55,19 @@ float wsen_hids_get_humidity();
 
 
 /**
- * @brief Returns whether at least one valid measurement exists.
+ * @brief Check whether at least one valid measurement is available.
+ *
+ * @return true if valid sensor data has been received.
  */
-bool wsen_hids_is_valid();
+bool wsen_hids_data_valid();
 
 
 /**
- * @brief Returns the number of communication or CRC errors.
+ * @brief Return the number of communication or CRC errors.
+ *
+ * @return Number of errors since initialization.
  */
 uint32_t wsen_hids_get_error_count();
 
 
 #endif // FLIGHT_SOFTWARE_WSEN_HIDS_H
-

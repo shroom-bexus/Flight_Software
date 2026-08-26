@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -6,7 +5,7 @@
 // ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
 // ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
 //
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology//
+// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
 #ifndef FLIGHT_SOFTWARE_LOGGER_H
 #define FLIGHT_SOFTWARE_LOGGER_H
@@ -17,7 +16,7 @@
 /**
  * @brief Initialize the SD card and open all enabled log files.
  *
- * @return true if initialization was successful.
+ * @return true if all enabled log files were opened successfully.
  */
 bool logger_init();
 
@@ -33,35 +32,35 @@ void logger_update();
 /**
  * @brief Log one MAX31865 temperature measurement.
  *
- * @param sensorIndex Sensor number, starting at 0.
- * @param temperature_K Temperature in Kelvin.
+ * @param sensor_index Sensor channel, starting at 0.
+ * @param temperature_k Temperature in Kelvin.
  */
 void logger_log_max31865(
-    uint8_t sensorIndex,
-    float temperature_K
+    uint8_t sensor_index,
+    float temperature_k
 );
 
 
 /**
  * @brief Log one WSEN-PADS measurement.
  *
- * @param temperature_K Temperature in Kelvin.
- * @param pressure_Pa Pressure in Pascal.
+ * @param temperature_k Temperature in Kelvin.
+ * @param pressure_pa Pressure in Pascal.
  */
 void logger_log_wsen_pads(
-    float temperature_K,
-    float pressure_Pa
+    float temperature_k,
+    float pressure_pa
 );
 
 
 /**
  * @brief Log one WSEN-HIDS measurement.
  *
- * @param temperature_K Temperature in Kelvin.
+ * @param temperature_k Temperature in Kelvin.
  * @param humidity_percent Relative humidity in percent.
  */
 void logger_log_wsen_hids(
-    float temperature_K,
+    float temperature_k,
     float humidity_percent
 );
 
@@ -70,23 +69,25 @@ void logger_log_wsen_hids(
  * @brief Log one WSEN-ISDS measurement.
  */
 void logger_log_wsen_isds(
-    float accelX,
-    float accelY,
-    float accelZ,
-    float gyroX,
-    float gyroY,
-    float gyroZ
+    float accel_x,
+    float accel_y,
+    float accel_z,
+    float gyro_x,
+    float gyro_y,
+    float gyro_z
 );
 
 
 /**
  * @brief Log one raw AIRDOS UART message.
  *
- * AIRDOS support can be connected once the AIRDOS driver is implemented.
+ * @param sensor_index AIRDOS sensor channel, starting at 0.
+ * @param data Received UART message.
  */
 void logger_log_airdos(
-    uint8_t sensorIndex,
+    uint8_t sensor_index,
     const char* data
 );
 
-#endif //FLIGHT_SOFTWARE_LOGGER_H
+
+#endif // FLIGHT_SOFTWARE_LOGGER_H

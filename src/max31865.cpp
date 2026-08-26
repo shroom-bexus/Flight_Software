@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -9,73 +8,166 @@
 // Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
 #include "max31865.h"
-#include "config.h"
+
 #include <Adafruit_MAX31865.h>
 
-/**
- * One Adafruit_MAX31865 object is created for each temperature channel.
- *
- * All MAX31865 devices can share the same SPI bus. Each device is selected
- * individually through its chip-select pin.
- *
- * SPI bus and chip-select pins are defined in config.h so that no hardware
- * configuration is hard-coded inside this driver.
- */
-static Adafruit_MAX31865 maxSensors[MAX31865_SENSOR_COUNT] =
+#include "config.h"
+
+
+namespace
 {
-    Adafruit_MAX31865(MAX31865_CS_1, &MAX31865_SPI_BUS)//,
-    // Adafruit_MAX31865(MAX31865_CS_2, &MAX31865_SPI_BUS)
-    // ...
-    // TODO: Update number of RTDs
+
+// ============================================================================
+// Channel configuration
+// ============================================================================
+
+constexpr bool channel_enabled[] =
+{
+    MAX31865_TEMP_1_ENABLED,
+    MAX31865_TEMP_2_ENABLED,
+    MAX31865_TEMP_3_ENABLED,
+    MAX31865_TEMP_4_ENABLED,
+    MAX31865_TEMP_5_ENABLED,
+    MAX31865_TEMP_6_ENABLED,
+    MAX31865_TEMP_7_ENABLED,
+    MAX31865_TEMP_8_ENABLED,
+    MAX31865_TEMP_9_ENABLED
 };
 
 
-/**
- * Actual reference resistor value for each MAX31865 measurement channel.
- *
- * Each MAX31865 has its own physical reference resistor. Therefore, the
- * resistor values are stored individually instead of using one common
- * value for every sensor.
- *
- * The corresponding values are defined in config.h.
- */
-static constexpr float referenceResistors[MAX31865_SENSOR_COUNT] =
+Adafruit_MAX31865 max_sensors[] =
 {
-    MAX31865_RREF_1//,
-    // MAX31865_REF_2
-    // ...
-    // TODO: Update Number of reference Resistors
+    Adafruit_MAX31865(MAX31865_CS_1, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_2, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_3, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_4, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_5, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_6, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_7, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_8, &MAX31865_SPI_BUS),
+    Adafruit_MAX31865(MAX31865_CS_9, &MAX31865_SPI_BUS)
 };
 
 
-/**
- * Stores the most recently measured temperature of every sensor.
- *
- * The array is static and therefore only accessible from within this file.
- * Other program modules cannot modify the temperature values directly.
- *
- * update_temp() writes the values.
- * get_temp() reads the values.
- */
-static float temperatures[MAX31865_SENSOR_COUNT];
+constexpr float reference_resistors[] =
+{
+    MAX31865_RREF_1,
+    MAX31865_RREF_2,
+    MAX31865_RREF_3,
+    MAX31865_RREF_4,
+    MAX31865_RREF_5,
+    MAX31865_RREF_6,
+    MAX31865_RREF_7,
+    MAX31865_RREF_8,
+    MAX31865_RREF_9
+};
 
+
+constexpr float calibration_scale[] =
+{
+    MAX31865_SCALE_1,
+    MAX31865_SCALE_2,
+    MAX31865_SCALE_3,
+    MAX31865_SCALE_4,
+    MAX31865_SCALE_5,
+    MAX31865_SCALE_6,
+    MAX31865_SCALE_7,
+    MAX31865_SCALE_8,
+    MAX31865_SCALE_9
+};
+
+
+constexpr float calibration_offset_c[] =
+{
+    MAX31865_OFFSET_C_1,
+    MAX31865_OFFSET_C_2,
+    MAX31865_OFFSET_C_3,
+    MAX31865_OFFSET_C_4,
+    MAX31865_OFFSET_C_5,
+    MAX31865_OFFSET_C_6,
+    MAX31865_OFFSET_C_7,
+    MAX31865_OFFSET_C_8,
+    MAX31865_OFFSET_C_9
+};
+
+
+// Compile-time checks prevent configuration arrays from becoming inconsistent.
+static_assert(
+    sizeof(channel_enabled) / sizeof(channel_enabled[0]) ==
+    MAX31865_CHANNEL_COUNT
+);
+
+static_assert(
+    sizeof(max_sensors) / sizeof(max_sensors[0]) ==
+    MAX31865_CHANNEL_COUNT
+);
+
+static_assert(
+    sizeof(reference_resistors) / sizeof(reference_resistors[0]) ==
+    MAX31865_CHANNEL_COUNT
+);
+
+static_assert(
+    sizeof(calibration_scale) / sizeof(calibration_scale[0]) ==
+    MAX31865_CHANNEL_COUNT
+);
+
+static_assert(
+    sizeof(calibration_offset_c) / sizeof(calibration_offset_c[0]) ==
+    MAX31865_CHANNEL_COUNT
+);
+
+
+// ============================================================================
+// Runtime state
+// ============================================================================
+
+struct SensorState
+{
+    float temperature_k = NAN;
+
+    uint32_t error_count = 0;
+    uint8_t fault = 0;
+
+    bool valid = false;
+};
+
+
+SensorState sensor_state[MAX31865_CHANNEL_COUNT];
+
+
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+bool index_valid(uint8_t index)
+{
+    return index < MAX31865_CHANNEL_COUNT;
+}
+
+} // namespace
+
+
+// ============================================================================
+// Initialization
+// ============================================================================
 
 bool max31865_init()
 {
     bool success = true;
 
-    /**
-     * Initialize every configured MAX31865 device.
-     *
-     * All temperature sensors currently use a 2-wire PT1000 connection.
-     *
-     * Initialization continues even if one sensor fails. This allows all
-     * configured sensors to be checked before the function returns.
-     */
-    for (auto & maxSensor : maxSensors)
+    for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
     {
-        if (!maxSensor.begin(MAX31865_2WIRE))
+        sensor_state[i] = {};
+
+        if (!channel_enabled[i])
         {
+            continue;
+        }
+
+        if (!max_sensors[i].begin(MAX31865_2WIRE))
+        {
+            ++sensor_state[i].error_count;
             success = false;
         }
     }
@@ -84,41 +176,130 @@ bool max31865_init()
 }
 
 
-void max31865_update()
+// ============================================================================
+// Measurement
+// ============================================================================
+
+bool max31865_update()
 {
-    /**
-     * Read every configured MAX31865 once.
-     *
-     * The Adafruit library reads the RTD value from the MAX31865 and converts
-     * it into a temperature.
-     *
-     * MAX31865_RNOMINAL is the nominal resistance of the PT1000 at 0 °C.
-     *
-     * referenceResistors[i] contains the individually measured reference
-     * resistor belonging to the respective MAX31865 channel.
-     *
-     * The resulting temperature is stored internally and remains unchanged
-     * until update_temp() is called again.
-     */
-    for (uint8_t i = 0; i < MAX31865_SENSOR_COUNT; i++)
+    bool success = true;
+
+    for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
     {
-        temperatures[i] = maxSensors[i].temperature(
-            MAX31865_RNOMINAL,
-            referenceResistors[i]
-        );
+        if (!channel_enabled[i])
+        {
+            continue;
+        }
+
+        SensorState &state = sensor_state[i];
+
+        // valid always describes the current measurement cycle.
+        state.valid = false;
+        state.fault = 0;
+
+
+        // Adafruit_MAX31865 returns temperature in degrees Celsius.
+        const float measured_c =
+            max_sensors[i].temperature(
+                MAX31865_RNOMINAL,
+                reference_resistors[i]
+            );
+
+
+        // Read the hardware fault register after the measurement.
+        state.fault = max_sensors[i].readFault();
+
+        if (state.fault != 0)
+        {
+            ++state.error_count;
+            success = false;
+
+            // Clear the latched fault before the next measurement.
+            max_sensors[i].clearFault();
+
+            continue;
+        }
+
+
+        // Apply the individual linear calibration before converting to Kelvin.
+        const float calibrated_c =
+            measured_c * calibration_scale[i] +
+            calibration_offset_c[i];
+
+
+        // Only overwrite the stored value after a successful measurement.
+        state.temperature_k =
+            calibrated_c + 273.15f;
+
+        state.valid = true;
     }
+
+    return success;
 }
 
 
+// ============================================================================
+// Getter functions
+// ============================================================================
+
 float max31865_get_temperature(TempSensor sensor)
 {
-    /**
-     * Convert the strongly typed TempSensor enum into an array index.
-     *
-     * No communication with the MAX31865 takes place here. The function
-     * simply returns the last temperature stored by update_temp().
-     */
-    const auto index = static_cast<uint8_t>(sensor);
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
 
-    return temperatures[index]+ 273.15f;
+    if (!index_valid(index))
+    {
+        return NAN;
+    }
+
+    return sensor_state[index].temperature_k;
+}
+
+
+bool max31865_is_enabled(TempSensor sensor)
+{
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
+
+    return index_valid(index) &&
+           channel_enabled[index];
+}
+
+
+bool max31865_data_valid(TempSensor sensor)
+{
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
+
+    return index_valid(index) &&
+           channel_enabled[index] &&
+           sensor_state[index].valid;
+}
+
+
+uint8_t max31865_get_fault(TempSensor sensor)
+{
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
+
+    if (!index_valid(index))
+    {
+        return 0;
+    }
+
+    return sensor_state[index].fault;
+}
+
+
+uint32_t max31865_get_error_count(TempSensor sensor)
+{
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
+
+    if (!index_valid(index))
+    {
+        return 0;
+    }
+
+    return sensor_state[index].error_count;
 }

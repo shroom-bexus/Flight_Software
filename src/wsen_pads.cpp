@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -9,50 +8,59 @@
 // Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
 #include "wsen_pads.h"
+
+#include <Arduino.h>
 #include <Wire.h>
+
 #include "config.h"
 
-// -----------------------------------------------------------------------------
-// WSEN-PADS registers
-// -----------------------------------------------------------------------------
 
-static constexpr uint8_t REG_DEVICE_ID = 0x0F;
-static constexpr uint8_t REG_CTRL_1    = 0x10;
-static constexpr uint8_t REG_CTRL_2    = 0x11;
-static constexpr uint8_t REG_STATUS    = 0x27;
+namespace
+{
 
-static constexpr uint8_t REG_PRESS_XL  = 0x28;
+// ============================================================================
+// Registers
+// ============================================================================
 
-static constexpr uint8_t DEVICE_ID     = 0xB3;
+constexpr uint8_t REG_DEVICE_ID = 0x0F;
+constexpr uint8_t REG_CTRL_1    = 0x10;
+constexpr uint8_t REG_CTRL_2    = 0x11;
+constexpr uint8_t REG_STATUS    = 0x27;
+constexpr uint8_t REG_PRESS_XL  = 0x28;
+
+constexpr uint8_t DEVICE_ID = 0xB3;
+
 
 // STATUS register
-static constexpr uint8_t STATUS_P_DA = 0x01;
-static constexpr uint8_t STATUS_T_DA = 0x02;
+constexpr uint8_t STATUS_P_DA = 0x01;
+constexpr uint8_t STATUS_T_DA = 0x02;
+
 
 // CTRL_REG1
-static constexpr uint8_t CTRL1_BDU = 0x02;
+constexpr uint8_t CTRL1_BDU = 0x02;
+
 
 // CTRL_REG2
-static constexpr uint8_t CTRL2_LOW_NOISE = 0x02;
-static constexpr uint8_t CTRL2_SWRESET   = 0x04;
-static constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
+constexpr uint8_t CTRL2_LOW_NOISE = 0x02;
+constexpr uint8_t CTRL2_SWRESET   = 0x04;
+constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
 
 
-// -----------------------------------------------------------------------------
+// ============================================================================
 // Stored measurement data
-// -----------------------------------------------------------------------------
+// ============================================================================
 
-static float pressure_Pa    = NAN;
-static float temperature_K = NAN;
+float pressure_pa = NAN;
+float temperature_k = NAN;
 
-static bool dataValid = false;
+bool has_valid_data = false;
 
 
-// -----------------------------------------------------------------------------
-// Internal I2C functions
-// -----------------------------------------------------------------------------
+// ============================================================================
+// I2C helper functions
+// ============================================================================
 
-static bool write_register(uint8_t reg, uint8_t value)
+bool write_register(const uint8_t reg, const uint8_t value)
 {
     Wire.beginTransmission(WSEN_PADS_ADDRESS);
 
@@ -63,7 +71,7 @@ static bool write_register(uint8_t reg, uint8_t value)
 }
 
 
-static bool read_register(uint8_t reg, uint8_t &value)
+bool read_register(const uint8_t reg, uint8_t &value)
 {
     Wire.beginTransmission(WSEN_PADS_ADDRESS);
     Wire.write(reg);
@@ -86,10 +94,10 @@ static bool read_register(uint8_t reg, uint8_t &value)
 }
 
 
-static bool read_registers(uint8_t startReg, uint8_t *buffer, uint8_t length)
+bool read_registers(uint8_t start_reg, uint8_t *buffer, uint8_t length)
 {
     Wire.beginTransmission(WSEN_PADS_ADDRESS);
-    Wire.write(startReg);
+    Wire.write(start_reg);
 
     if (Wire.endTransmission(false) != 0)
     {
@@ -103,7 +111,7 @@ static bool read_registers(uint8_t startReg, uint8_t *buffer, uint8_t length)
         return false;
     }
 
-    for (uint8_t i = 0; i < length; i++)
+    for (uint8_t i = 0; i < length; ++i)
     {
         buffer[i] = Wire.read();
     }
@@ -112,13 +120,13 @@ static bool read_registers(uint8_t startReg, uint8_t *buffer, uint8_t length)
 }
 
 
-// -----------------------------------------------------------------------------
-// ODR configuration
-// -----------------------------------------------------------------------------
+// ============================================================================
+// Output data rate
+// ============================================================================
 
-static bool get_odr_bits(uint16_t odrHz, uint8_t &bits)
+bool get_odr_bits(uint16_t odr_hz, uint8_t &bits)
 {
-    switch (odrHz)
+    switch (odr_hz)
     {
         case 1:
             bits = 0b001;
@@ -155,41 +163,34 @@ static bool get_odr_bits(uint16_t odrHz, uint8_t &bits)
     return true;
 }
 
+} // namespace
 
-// -----------------------------------------------------------------------------
-// Public functions
-// -----------------------------------------------------------------------------
+
+// ============================================================================
+// Initialization
+// ============================================================================
 
 bool wsen_pads_init()
 {
-    Wire.begin();
-    Wire.setClock(400000);
+    pressure_pa = NAN;
+    temperature_k = NAN;
+    has_valid_data = false;
 
-    delay(10);
+    // Verify that the expected sensor is connected.
+    uint8_t device_id;
 
-    // -------------------------------------------------------------------------
-    // Verify sensor identity
-    // -------------------------------------------------------------------------
-
-    uint8_t deviceID;
-
-    if (!read_register(REG_DEVICE_ID, deviceID))
+    if (!read_register(REG_DEVICE_ID, device_id))
     {
-        Serial.println("WSEN-PADS: I2C communication failed.");
         return false;
     }
 
-    if (deviceID != DEVICE_ID)
+    if (device_id != DEVICE_ID)
     {
-        Serial.print("WSEN-PADS: Wrong device ID: 0x");
-        Serial.println(deviceID, HEX);
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Software reset
-    // -------------------------------------------------------------------------
 
+    // Perform a software reset.
     uint8_t ctrl2;
 
     if (!read_register(REG_CTRL_2, ctrl2))
@@ -204,19 +205,12 @@ bool wsen_pads_init()
 
     delay(5);
 
-    // -------------------------------------------------------------------------
-    // Configure CTRL_REG2
-    //
-    // Auto increment:
-    // Required so pressure + temperature can be read in one transaction.
-    //
-    // Low noise:
-    // Available for ODR < 100 Hz.
-    // -------------------------------------------------------------------------
 
+    // Enable register auto-increment so pressure and temperature can be
+    // read in one transaction. Low-noise mode is available below 100 Hz.
     ctrl2 = CTRL2_AUTO_INC;
 
-    if (WSEN_PADS_ODR_HZ < 100)
+    if constexpr (WSEN_PADS_ODR_HZ < 100)
     {
         ctrl2 |= CTRL2_LOW_NOISE;
     }
@@ -226,36 +220,29 @@ bool wsen_pads_init()
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Configure output data rate
-    // -------------------------------------------------------------------------
 
-    uint8_t odrBits;
+    // Configure output data rate and block-data-update.
+    uint8_t odr_bits;
 
-    if (!get_odr_bits(WSEN_PADS_ODR_HZ, odrBits))
+    if (!get_odr_bits(WSEN_PADS_ODR_HZ, odr_bits))
     {
         return false;
     }
 
-    uint8_t ctrl1 = CTRL1_BDU | (odrBits << 4);
+    const uint8_t ctrl1 =
+        CTRL1_BDU | (odr_bits << 4);
 
-    if (!write_register(REG_CTRL_1, ctrl1))
-    {
-        return false;
-    }
-
-    dataValid = false;
-
-    return true;
+    return write_register(REG_CTRL_1, ctrl1);
 }
 
 
+// ============================================================================
+// Measurement
+// ============================================================================
+
 bool wsen_pads_update()
 {
-    // -------------------------------------------------------------------------
-    // Check whether both pressure and temperature data are available
-    // -------------------------------------------------------------------------
-
+    // Pressure and temperature must both contain new data.
     uint8_t status;
 
     if (!read_register(REG_STATUS, status))
@@ -263,22 +250,14 @@ bool wsen_pads_update()
         return false;
     }
 
-    if ((status & (STATUS_P_DA | STATUS_T_DA))
-        != (STATUS_P_DA | STATUS_T_DA))
+    if ((status & (STATUS_P_DA | STATUS_T_DA)) !=
+        (STATUS_P_DA | STATUS_T_DA))
     {
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Read pressure + temperature in one transaction
-    //
-    // 0x28  Pressure XL
-    // 0x29  Pressure L
-    // 0x2A  Pressure H
-    // 0x2B  Temperature L
-    // 0x2C  Temperature H
-    // -------------------------------------------------------------------------
 
+    // Pressure occupies three bytes followed by two temperature bytes.
     uint8_t data[5];
 
     if (!read_registers(REG_PRESS_XL, data, sizeof(data)))
@@ -286,64 +265,59 @@ bool wsen_pads_update()
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Pressure: signed 24-bit two's complement
-    // -------------------------------------------------------------------------
 
-    int32_t rawPressure =
+    // Pressure is stored as a signed 24-bit two's-complement value.
+    int32_t raw_pressure =
         (static_cast<int32_t>(data[2]) << 16) |
         (static_cast<int32_t>(data[1]) << 8)  |
          static_cast<int32_t>(data[0]);
 
-    // Sign extension from 24 bit to 32 bit
-    if (rawPressure & 0x00800000)
+    // Extend the 24-bit sign bit to 32 bits.
+    if (raw_pressure & 0x00800000)
     {
-        rawPressure |= 0xFF000000;
+        raw_pressure |= 0xFF000000;
     }
 
-    // -------------------------------------------------------------------------
-    // Temperature: signed 16-bit two's complement
-    // -------------------------------------------------------------------------
 
-    int16_t rawTemperature =
+    // Temperature is stored as a signed 16-bit two's-complement value.
+    const int16_t raw_temperature =
         static_cast<int16_t>(
             (static_cast<uint16_t>(data[4]) << 8) |
              static_cast<uint16_t>(data[3])
         );
 
-    // -------------------------------------------------------------------------
-    // Convert to physical units
-    // -------------------------------------------------------------------------
 
-    float newPressure =
-        static_cast<float>(rawPressure) / 40.96f;
+    // Convert raw sensor values to SI units.
+    pressure_pa =
+        static_cast<float>(raw_pressure) / 40.96f;
 
-    float newTemperature =
-        static_cast<float>(rawTemperature) / 100.0 + 273.15f;
+    temperature_k =
+        static_cast<float>(raw_temperature) / 100.0f +
+        273.15f;
 
-    // Only replace stored values after a successful complete read
-    pressure_Pa = newPressure;
-    temperature_K = newTemperature;
-
-    dataValid = true;
+    has_valid_data = true;
 
     return true;
 }
 
 
+// ============================================================================
+// Getter functions
+// ============================================================================
+
 float wsen_pads_get_pressure()
 {
-    return pressure_Pa;
+    return pressure_pa;
 }
 
 
 float wsen_pads_get_temperature()
 {
-    return temperature_K;
+    return temperature_k;
 }
 
 
 bool wsen_pads_data_valid()
 {
-    return dataValid;
+    return has_valid_data;
 }

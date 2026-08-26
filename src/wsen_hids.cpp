@@ -1,4 +1,3 @@
-
 // ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
 // ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
 // ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
@@ -19,15 +18,27 @@
 namespace
 {
 
-// High precision single-shot measurement
+// ============================================================================
+// Sensor configuration
+// ============================================================================
+
+// Command for a high-precision single-shot measurement.
 constexpr uint8_t HIDS_MEASURE_CMD = 0xFD;
 
+// Measurement response:
+// Temperature MSB + LSB + CRC
+// Humidity    MSB + LSB + CRC
+constexpr uint8_t HIDS_DATA_LENGTH = 6;
 
-// Cached measurement values
-float temperature = NAN;
-float humidity = NAN;
 
-bool data_valid = false;
+// ============================================================================
+// Stored measurement data
+// ============================================================================
+
+float temperature_k = NAN;
+float humidity_percent = NAN;
+
+bool has_valid_data = false;
 uint32_t error_count = 0;
 
 
@@ -35,6 +46,9 @@ uint32_t error_count = 0;
 // CRC
 // ============================================================================
 
+/**
+ * @brief Calculate the CRC used by the WSEN-HIDS measurement data.
+ */
 uint8_t calculate_crc(const uint8_t* data, size_t length)
 {
     uint8_t crc = 0xFF;
@@ -68,20 +82,12 @@ uint8_t calculate_crc(const uint8_t* data, size_t length)
 
 bool wsen_hids_init()
 {
-    data_valid = false;
+    temperature_k = NAN;
+    humidity_percent = NAN;
+    has_valid_data = false;
     error_count = 0;
 
-    temperature = NAN;
-    humidity = NAN;
-
-
-    if constexpr (!ENABLE_WSEN_HIDS)
-    {
-        return false;
-    }
-
-
-    // Check if the sensor responds on the I2C bus
+    // Check whether the sensor responds on the I2C bus.
     Wire.beginTransmission(WSEN_HIDS_I2C_ADDRESS);
 
     if (Wire.endTransmission() != 0)
@@ -90,24 +96,17 @@ bool wsen_hids_init()
         return false;
     }
 
-
     return true;
 }
 
 
 // ============================================================================
-// Update
+// Measurement
 // ============================================================================
 
 bool wsen_hids_update()
 {
-    if constexpr (!ENABLE_WSEN_HIDS)
-    {
-        return false;
-    }
-
-
-    // Start high precision measurement
+    // Start a high-precision single-shot measurement.
     Wire.beginTransmission(WSEN_HIDS_I2C_ADDRESS);
     Wire.write(HIDS_MEASURE_CMD);
 
@@ -117,31 +116,25 @@ bool wsen_hids_update()
         return false;
     }
 
-
-    // Wait for measurement to finish
+    // The sensor requires time to complete the measurement.
     delay(10);
-
-
-    // Temperature MSB + LSB + CRC
-    // Humidity    MSB + LSB + CRC
-    constexpr uint8_t HIDS_DATA_LENGTH = 6;
 
     uint8_t data[HIDS_DATA_LENGTH];
 
-    if (Wire.requestFrom(WSEN_HIDS_I2C_ADDRESS, HIDS_DATA_LENGTH) != HIDS_DATA_LENGTH)
+    if (Wire.requestFrom(
+            WSEN_HIDS_I2C_ADDRESS,
+            HIDS_DATA_LENGTH) != HIDS_DATA_LENGTH)
     {
         ++error_count;
         return false;
     }
 
-
-    for (unsigned char & i : data)
+    for (uint8_t &byte : data)
     {
-        i = Wire.read();
+        byte = Wire.read();
     }
 
-
-    // Check CRC of temperature and humidity
+    // Temperature and humidity each have their own CRC byte.
     if (calculate_crc(&data[0], 2) != data[2] ||
         calculate_crc(&data[3], 2) != data[5])
     {
@@ -149,32 +142,33 @@ bool wsen_hids_update()
         return false;
     }
 
-
-    // Combine MSB and LSB
+    // Combine MSB and LSB.
     const uint16_t raw_temperature =
         (static_cast<uint16_t>(data[0]) << 8) | data[1];
 
     const uint16_t raw_humidity =
         (static_cast<uint16_t>(data[3]) << 8) | data[4];
 
-
-    // Convert temperature to °C
-    temperature =
+    // Convert raw temperature to Kelvin.
+    temperature_k =
         -45.0f +
-        175.0f * static_cast<float>(raw_temperature) / 65535.0f;
+        175.0f * static_cast<float>(raw_temperature) / 65535.0f +
+        273.15f;
 
-
-    // Convert relative humidity to %
-    humidity =
+    // Convert raw humidity to relative humidity in percent.
+    humidity_percent =
         -6.0f +
         125.0f * static_cast<float>(raw_humidity) / 65535.0f;
 
+    // Numerical conversion can produce values slightly outside
+    // the physical 0...100 % range.
+    humidity_percent = constrain(
+        humidity_percent,
+        0.0f,
+        100.0f
+    );
 
-    // Limit humidity to physical range
-    humidity = constrain(humidity, 0.0f, 100.0f);
-
-
-    data_valid = true;
+    has_valid_data = true;
 
     return true;
 }
@@ -186,19 +180,19 @@ bool wsen_hids_update()
 
 float wsen_hids_get_temperature()
 {
-    return temperature;
+    return temperature_k;
 }
 
 
 float wsen_hids_get_humidity()
 {
-    return humidity;
+    return humidity_percent;
 }
 
 
-bool wsen_hids_is_valid()
+bool wsen_hids_data_valid()
 {
-    return data_valid;
+    return has_valid_data;
 }
 
 
