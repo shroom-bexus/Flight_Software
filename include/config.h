@@ -57,7 +57,7 @@
 #define ENABLE_WSEN_PADS  true
 #define ENABLE_WSEN_HIDS  true
 #define ENABLE_WSEN_ISDS  false
-#define ENABLE_AIRDOS     false
+#define ENABLE_AIRDOS     true
 
 #elif FLIGHT_SECONDARY
 
@@ -225,6 +225,18 @@ constexpr uint16_t WSEN_PADS_ODR_HZ = 10;
 // ============================================================================
 
 constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
+
+
+// ============================================================================
+// AIRDOS radiation sensors
+// ============================================================================
+
+// UART baud rate used by AIRDOS03.
+constexpr uint32_t AIRDOS_BAUD_RATE = 115200;
+
+// First AIRDOS sensor.
+// RX9/TX9 on the SHROOM PCB is connected to Teensy Serial7.
+#define AIRDOS_1_SERIAL Serial7
 
 
 #endif // FLIGHT_SOFTWARE_CONFIG_H

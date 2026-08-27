@@ -36,6 +36,10 @@
 #include "wsen_hids.h"
 #endif
 
+#if ENABLE_AIRDOS
+#include "airdos.h"
+#endif
+
 
 namespace
 {
@@ -195,6 +199,19 @@ void setup()
 #endif
 
 
+    // ------------------------------------------------------------------------
+    // AIRDOS radiation sensor
+    // ------------------------------------------------------------------------
+
+#if ENABLE_AIRDOS
+
+    airdos_init();
+
+    Serial.println("AIRDOS: OK");
+
+#endif
+
+
     Serial.println();
     Serial.println("Initialization complete.");
     Serial.println();
@@ -298,6 +315,23 @@ void loop()
 
     // Periodically flush pending data to the SD card.
     logger_update();
+
+#endif
+
+
+    // ------------------------------------------------------------------------
+    // AIRDOS
+    // ------------------------------------------------------------------------
+
+#if ENABLE_AIRDOS
+
+    while (airdos_update())
+    {
+        logger_log_airdos(
+            0,
+            airdos_get_data()
+        );
+    }
 
 #endif
 }
