@@ -40,6 +40,10 @@
 #include "airdos.h"
 #endif
 
+#if ENABLE_ETHERNET
+#include "ethernet_link.h"
+#endif
+
 
 namespace
 {
@@ -62,6 +66,11 @@ elapsedMillis wsen_hids_timer;
 bool wsen_hids_ready = false;
 #endif
 
+#if ENABLE_ETHERNET
+    bool ethernet_ready = false;
+
+    char ethernet_rx_line[ETHERNET_RX_BUFFER_SIZE];
+#endif
 
 // ============================================================================
 // Helper functions
@@ -93,7 +102,7 @@ void setup()
     // ------------------------------------------------------------------------
 
     Serial.begin(115200);
-    delay(500);
+    delay(2000);
 
 
     // ------------------------------------------------------------------------
@@ -212,6 +221,22 @@ void setup()
 #endif
 
 
+    // ------------------------------------------------------------------------
+    // Ethernet
+    // ------------------------------------------------------------------------
+
+#if ENABLE_ETHERNET
+
+    ethernet_ready = ethernet_link_init();
+
+    print_init_result(
+        "Ethernet",
+        ethernet_ready
+    );
+
+#endif
+
+
     Serial.println();
     Serial.println("Initialization complete.");
     Serial.println();
@@ -224,6 +249,32 @@ void setup()
 
 void loop()
 {
+
+    // ------------------------------------------------------------------------
+    // Ethernet
+    // ------------------------------------------------------------------------
+
+#if ENABLE_ETHERNET
+
+    if (ethernet_ready)
+    {
+        ethernet_link_update();
+
+        if (ethernet_link_read_line(
+                ethernet_rx_line,
+                sizeof(ethernet_rx_line)))
+        {
+            Serial.print("Ethernet RX: ");
+            Serial.println(ethernet_rx_line);
+
+            // Temporary connection test.
+            ethernet_link_send_line("ACK");
+        }
+    }
+
+#endif
+
+
     // ------------------------------------------------------------------------
     // MAX31865
     // ------------------------------------------------------------------------

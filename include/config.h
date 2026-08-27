@@ -239,4 +239,42 @@ constexpr uint32_t AIRDOS_BAUD_RATE = 115200;
 #define AIRDOS_1_SERIAL Serial7
 
 
+
+// ============================================================================
+// Ethernet
+// ============================================================================
+
+// SHROOM experiment IP assigned by BEXUS/SSC.
+constexpr uint8_t ETHERNET_LOCAL_IP[4] =
+{
+    172,16,18,131
+};
+
+// Ground Station IP assigned by BEXUS/SSC.
+constexpr uint8_t GROUND_STATION_IP[4] =
+{
+    172,16,18,130
+};
+
+// TODO: Confirm subnet mask with SSC.
+constexpr uint8_t ETHERNET_SUBNET[4] =
+{
+    255,255,255,0
+};
+
+constexpr uint8_t ETHERNET_GATEWAY[4] =
+{
+    0,0,0,0
+};
+
+constexpr uint8_t ETHERNET_DNS[4] =
+{
+    0,0,0,0
+};
+
+constexpr uint16_t ETHERNET_TCP_PORT = 5000;
+
+constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
+
+
 #endif // FLIGHT_SOFTWARE_CONFIG_H
