@@ -129,6 +129,7 @@ struct SensorState
     uint32_t error_count = 0;
     uint8_t fault = 0;
 
+    bool initialized = false;
     bool valid = false;
 };
 
@@ -165,7 +166,10 @@ bool max31865_init()
             continue;
         }
 
-        if (!max_sensors[i].begin(MAX31865_2WIRE))
+        sensor_state[i].initialized =
+            max_sensors[i].begin(MAX31865_2WIRE);
+
+        if (!sensor_state[i].initialized)
         {
             ++sensor_state[i].error_count;
             success = false;
@@ -193,12 +197,26 @@ bool max31865_update()
 
         SensorState &state = sensor_state[i];
 
-        // valid always describes the current measurement cycle.
+        // Validity always refers to the current measurement cycle.
         state.valid = false;
         state.fault = 0;
 
 
-        // Adafruit_MAX31865 returns temperature in degrees Celsius.
+        // Retry initialization if this channel was unavailable earlier.
+        if (!state.initialized)
+        {
+            state.initialized =
+                max_sensors[i].begin(MAX31865_2WIRE);
+
+            if (!state.initialized)
+            {
+                ++state.error_count;
+                success = false;
+                continue;
+            }
+        }
+
+
         const float measured_c =
             max_sensors[i].temperature(
                 MAX31865_RNOMINAL,
@@ -206,7 +224,6 @@ bool max31865_update()
             );
 
 
-        // Read the hardware fault register after the measurement.
         state.fault = max_sensors[i].readFault();
 
         if (state.fault != 0)
@@ -214,20 +231,16 @@ bool max31865_update()
             ++state.error_count;
             success = false;
 
-            // Clear the latched fault before the next measurement.
             max_sensors[i].clearFault();
 
             continue;
         }
 
 
-        // Apply the individual linear calibration before converting to Kelvin.
         const float calibrated_c =
             measured_c * calibration_scale[i] +
             calibration_offset_c[i];
 
-
-        // Only overwrite the stored value after a successful measurement.
         state.temperature_k =
             calibrated_c + 273.15f;
 

@@ -71,6 +71,12 @@ bool max31865_is_enabled(TempSensor sensor);
 
 
 /**
+ * @brief Check whether a channel initialized successfully.
+ */
+bool max31865_is_initialized(TempSensor sensor);
+
+
+/**
  * @brief Check whether the most recent measurement was valid.
  */
 bool max31865_data_valid(TempSensor sensor);

@@ -26,18 +26,13 @@ bool wsen_hids_init();
 /**
  * @brief Perform a new temperature and humidity measurement.
  *
- * The new values are stored internally and can be accessed using the
- * getter functions.
- *
  * @return true if a valid measurement was received.
  */
 bool wsen_hids_update();
 
 
 /**
- * @brief Return the latest temperature measurement.
- *
- * No new sensor measurement is performed.
+ * @brief Return the last valid temperature measurement.
  *
  * @return Temperature in Kelvin.
  */
@@ -45,9 +40,7 @@ float wsen_hids_get_temperature();
 
 
 /**
- * @brief Return the latest relative humidity measurement.
- *
- * No new sensor measurement is performed.
+ * @brief Return the last valid relative humidity measurement.
  *
  * @return Relative humidity in percent.
  */
@@ -55,9 +48,7 @@ float wsen_hids_get_humidity();
 
 
 /**
- * @brief Check whether at least one valid measurement is available.
- *
- * @return true if valid sensor data has been received.
+ * @brief Check whether the most recent update was successful.
  */
 bool wsen_hids_data_valid();
 

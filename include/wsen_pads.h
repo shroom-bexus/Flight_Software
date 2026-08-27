@@ -33,9 +33,7 @@ bool wsen_pads_update();
 
 
 /**
- * @brief Return the latest pressure measurement.
- *
- * No new sensor measurement is performed.
+ * @brief Return the last valid pressure measurement.
  *
  * @return Pressure in Pascal.
  */
@@ -43,9 +41,7 @@ float wsen_pads_get_pressure();
 
 
 /**
- * @brief Return the latest temperature measurement.
- *
- * No new sensor measurement is performed.
+ * @brief Return the last valid temperature measurement.
  *
  * @return Temperature in Kelvin.
  */
@@ -53,9 +49,7 @@ float wsen_pads_get_temperature();
 
 
 /**
- * @brief Check whether at least one valid measurement is available.
- *
- * @return true if valid sensor data has been received.
+ * @brief Check whether the most recent update was successful.
  */
 bool wsen_pads_data_valid();
 

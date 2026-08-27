@@ -53,7 +53,7 @@ constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
 float pressure_pa = NAN;
 float temperature_k = NAN;
 
-bool has_valid_data = false;
+bool last_measurement_valid = false;
 
 
 // ============================================================================
@@ -174,7 +174,7 @@ bool wsen_pads_init()
 {
     pressure_pa = NAN;
     temperature_k = NAN;
-    has_valid_data = false;
+    last_measurement_valid = false;
 
     // Verify that the expected sensor is connected.
     uint8_t device_id;
@@ -242,7 +242,10 @@ bool wsen_pads_init()
 
 bool wsen_pads_update()
 {
-    // Pressure and temperature must both contain new data.
+    // The validity flag always describes the most recent update.
+    // The last valid measurement values remain stored after an error.
+    last_measurement_valid = false;
+
     uint8_t status;
 
     if (!read_register(REG_STATUS, status))
@@ -295,7 +298,7 @@ bool wsen_pads_update()
         static_cast<float>(raw_temperature) / 100.0f +
         273.15f;
 
-    has_valid_data = true;
+    last_measurement_valid = true;
 
     return true;
 }
@@ -319,5 +322,5 @@ float wsen_pads_get_temperature()
 
 bool wsen_pads_data_valid()
 {
-    return has_valid_data;
+    return last_measurement_valid;
 }

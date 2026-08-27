@@ -38,7 +38,7 @@ constexpr uint8_t HIDS_DATA_LENGTH = 6;
 float temperature_k = NAN;
 float humidity_percent = NAN;
 
-bool has_valid_data = false;
+bool last_measurement_valid = false;
 uint32_t error_count = 0;
 
 
@@ -84,7 +84,7 @@ bool wsen_hids_init()
 {
     temperature_k = NAN;
     humidity_percent = NAN;
-    has_valid_data = false;
+    last_measurement_valid = false;
     error_count = 0;
 
     // Check whether the sensor responds on the I2C bus.
@@ -106,6 +106,10 @@ bool wsen_hids_init()
 
 bool wsen_hids_update()
 {
+    // The validity flag always describes the most recent update.
+    // Previous valid values remain stored if this measurement fails.
+    last_measurement_valid = false;
+
     // Start a high-precision single-shot measurement.
     Wire.beginTransmission(WSEN_HIDS_I2C_ADDRESS);
     Wire.write(HIDS_MEASURE_CMD);
@@ -168,7 +172,7 @@ bool wsen_hids_update()
         100.0f
     );
 
-    has_valid_data = true;
+    last_measurement_valid = true;
 
     return true;
 }
@@ -192,7 +196,7 @@ float wsen_hids_get_humidity()
 
 bool wsen_hids_data_valid()
 {
-    return has_valid_data;
+    return last_measurement_valid;
 }
 
 
