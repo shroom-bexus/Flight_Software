@@ -44,6 +44,14 @@
 #include "ethernet_link.h"
 #endif
 
+#if ENABLE_HEATERS
+#include "heater.h"
+#endif
+
+#if ENABLE_THERMAL_CONTROL
+#include "thermal_control.h"
+#endif
+
 
 namespace
 {
@@ -161,6 +169,19 @@ void setup()
 
 
     // ------------------------------------------------------------------------
+    // Heaters
+    // ------------------------------------------------------------------------
+
+#if ENABLE_HEATERS
+
+    heater_init();
+
+    Serial.println("Heaters: OK");
+
+#endif
+
+
+    // ------------------------------------------------------------------------
     // MAX31865 temperature sensors
     // ------------------------------------------------------------------------
 
@@ -172,6 +193,19 @@ void setup()
         "MAX31865",
         max31865_init()
     );
+
+#endif
+
+
+    // ------------------------------------------------------------------------
+    // Thermal control
+    // ------------------------------------------------------------------------
+
+#if ENABLE_THERMAL_CONTROL
+
+    thermal_control_init();
+
+    Serial.println("Thermal control: OK");
 
 #endif
 
@@ -240,7 +274,8 @@ void setup()
     Serial.println();
     Serial.println("Initialization complete.");
     Serial.println();
-}
+
+} //Setup
 
 
 // ============================================================================
@@ -285,16 +320,39 @@ void loop()
     {
         max31865_timer = 0;
 
-        // All enabled channels are updated independently.
-        // A fault on one channel does not prevent the others from working.
         max31865_update();
+
+#if ENABLE_THERMAL_CONTROL
+        thermal_control_update();
+#endif
+
+#if ENABLE_ETHERNET && ENABLE_HEATERS
+
+        if (max31865_data_valid(TempSensor::TEMP_1) &&
+            ethernet_link_connected())
+        {
+            char message[80];
+
+            snprintf(
+                message,
+                sizeof(message),
+                "THERMAL,%lu,%.3f,%.1f",
+                millis(),
+                max31865_get_temperature(TempSensor::TEMP_1),
+                heater_get_power(Heater::HEATER_1)
+            );
+
+            ethernet_link_send_line(message);
+        }
+
+#endif
+
 
         for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
         {
             const TempSensor sensor =
                 static_cast<TempSensor>(i);
 
-            // Only log measurements that were valid during this update.
             if (!max31865_data_valid(sensor))
             {
                 continue;
@@ -325,10 +383,40 @@ void loop()
         // data were received successfully.
         if (wsen_pads_update())
         {
+            const float temperature_k =
+                wsen_pads_get_temperature();
+
+            const float pressure_pa =
+                wsen_pads_get_pressure();
+
+
+            // Log measurement.
             logger_log_wsen_pads(
-                wsen_pads_get_temperature(),
-                wsen_pads_get_pressure()
+                temperature_k,
+                pressure_pa
             );
+
+
+#if ENABLE_ETHERNET
+
+            // Send measurement to the ground station.
+            if (ethernet_link_connected())
+            {
+                char telemetry[96];
+
+                snprintf(
+                    telemetry,
+                    sizeof(telemetry),
+                    "PADS,%lu,%.3f,%.2f",
+                    millis(),
+                    temperature_k,
+                    pressure_pa
+                );
+
+                ethernet_link_send_line(telemetry);
+            }
+
+#endif
         }
     }
 

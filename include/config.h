@@ -19,7 +19,7 @@
 #define FLIGHT_SOFTWARE_CONFIG_H
 
 #include <Arduino.h>
-
+#include "max31865.h"
 
 // ============================================================================
 // Build target
@@ -49,27 +49,31 @@
 
 #if FLIGHT_PRIMARY
 
-#define ENABLE_ETHERNET   true
-#define ENABLE_TELEMETRY  true
-#define ENABLE_SD_LOGGING true
+#define ENABLE_ETHERNET         true
+#define ENABLE_TELEMETRY        true
+#define ENABLE_SD_LOGGING       true
+#define ENABLE_HEATERS          true
+#define ENABLE_THERMAL_CONTROL  false
 
-#define ENABLE_MAX31865   true
-#define ENABLE_WSEN_PADS  true
-#define ENABLE_WSEN_HIDS  true
-#define ENABLE_WSEN_ISDS  false
-#define ENABLE_AIRDOS     true
+#define ENABLE_MAX31865         true
+#define ENABLE_WSEN_PADS        true
+#define ENABLE_WSEN_HIDS        true
+#define ENABLE_WSEN_ISDS        false
+#define ENABLE_AIRDOS           true
 
 #elif FLIGHT_SECONDARY
 
-#define ENABLE_ETHERNET   false
-#define ENABLE_TELEMETRY  false
-#define ENABLE_SD_LOGGING true
+#define ENABLE_ETHERNET         false
+#define ENABLE_TELEMETRY        false
+#define ENABLE_SD_LOGGING       true
+#define ENABLE_HEATERS          false
+#define ENABLE_THERMAL_CONTROL  false
 
-#define ENABLE_MAX31865   false
-#define ENABLE_WSEN_PADS  false
-#define ENABLE_WSEN_HIDS  false
-#define ENABLE_WSEN_ISDS  false
-#define ENABLE_AIRDOS     true
+#define ENABLE_MAX31865         false
+#define ENABLE_WSEN_PADS        false
+#define ENABLE_WSEN_HIDS        false
+#define ENABLE_WSEN_ISDS        false
+#define ENABLE_AIRDOS           true
 
 #endif
 
@@ -195,11 +199,9 @@ constexpr float MAX31865_OFFSET_C_9 = 0.0f;
 
 #define MAX31865_SPI_BUS SPI
 
-
 // ---------------------------------------------------------------------------
 // Chip-select pins
 // ---------------------------------------------------------------------------
-//
 
 constexpr uint8_t MAX31865_CS_1 = 16;
 constexpr uint8_t MAX31865_CS_2 = 17;
@@ -210,6 +212,79 @@ constexpr uint8_t MAX31865_CS_6 = 31;
 constexpr uint8_t MAX31865_CS_7 = 34;
 constexpr uint8_t MAX31865_CS_8 = 35;
 constexpr uint8_t MAX31865_CS_9 = 36;
+
+
+// ============================================================================
+// Heaters
+// ============================================================================
+
+constexpr uint8_t HEATER_CHANNEL_COUNT = 4;
+
+// ---------------------------------------------------------------------------
+// Enabled channels
+// ---------------------------------------------------------------------------
+
+#define HEATER_1_ENABLED true
+#define HEATER_2_ENABLED true
+#define HEATER_3_ENABLED true
+#define HEATER_4_ENABLED true
+
+// ---------------------------------------------------------------------------
+// GPIO pins
+// ---------------------------------------------------------------------------
+
+constexpr uint8_t HEATER_PIN_1 = 2;
+constexpr uint8_t HEATER_PIN_2 = 3;
+constexpr uint8_t HEATER_PIN_3 = 4;
+constexpr uint8_t HEATER_PIN_4 = 5;
+
+// ---------------------------------------------------------------------------
+// PWM configuration
+// ---------------------------------------------------------------------------
+
+// Heater loads are thermally slow. A low PWM frequency reduces unnecessary
+// switching while still providing sufficiently smooth power control.
+constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
+
+// Maximum allowed output power for each heater.
+// Can later also be changed through telemetry commands.
+constexpr float HEATER_1_MAX_POWER_PERCENT = 100.0f;
+constexpr float HEATER_2_MAX_POWER_PERCENT = 100.0f;
+constexpr float HEATER_3_MAX_POWER_PERCENT = 100.0f;
+constexpr float HEATER_4_MAX_POWER_PERCENT = 100.0f;
+
+
+// ============================================================================
+// Thermal control
+// ============================================================================
+
+// MAX31865 sensor used for temperature control.
+constexpr TempSensor THERMAL_CONTROL_SENSOR =
+    TempSensor::TEMP_1;
+
+
+// Target temperature.
+constexpr float THERMAL_TARGET_K = 298.15f;
+
+
+// PID parameters.
+//
+// Units:
+// Kp: % / K
+// Ki: % / (K s)
+// Kd: % s / K
+
+constexpr float THERMAL_KP = 0.0f;
+constexpr float THERMAL_KI = 0.0f;
+constexpr float THERMAL_KD = 0.0f;
+
+
+// Maximum allowed heater output.
+constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
+
+
+// Software safety cutoff.
+constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
 
 
 // ============================================================================
