@@ -24,7 +24,6 @@
 #include "logo.h"
 #include "rtc.h"
 #include "logger.h"
-#include "thermal_control.h"
 
 #if ENABLE_MAX31865
 #include "max31865.h"

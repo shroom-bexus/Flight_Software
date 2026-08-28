@@ -53,7 +53,7 @@
 #define ENABLE_TELEMETRY        true
 #define ENABLE_SD_LOGGING       true
 #define ENABLE_HEATERS          true
-#define ENABLE_THERMAL_CONTROL  false
+#define ENABLE_THERMAL_CONTROL  true
 
 #define ENABLE_MAX31865         true
 #define ENABLE_WSEN_PADS        true
