@@ -18,11 +18,13 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <elapsedMillis.h>
+#include <cstring>
 
 #include "config.h"
 #include "logo.h"
 #include "rtc.h"
 #include "logger.h"
+#include "thermal_control.h"
 
 #if ENABLE_MAX31865
 #include "max31865.h"
@@ -299,11 +301,29 @@ void loop()
                 ethernet_rx_line,
                 sizeof(ethernet_rx_line)))
         {
-            Serial.print("Ethernet RX: ");
-            Serial.println(ethernet_rx_line);
+            if (strcmp(ethernet_rx_line, "CMD,PING") == 0)
+            {
+                ethernet_link_send_line("ACK,PING");
+            }
+            else if (strcmp(ethernet_rx_line, "CMD,STATUS") == 0)
+            {
+                ethernet_link_send_line("ACK,STATUS");
 
-            // Temporary connection test.
-            ethernet_link_send_line("ACK");
+                char status_message[128];
+
+                snprintf(
+                    status_message,
+                    sizeof(status_message),
+                    "STATUS,%lu,%u,%.2f,%.2f,%.2f",
+                    millis(),
+                    thermal_control_is_active() ? 1 : 0,
+                    thermal_control_get_target(),
+                    thermal_control_get_output(),
+                    thermal_control_get_temperature()
+                );
+
+                ethernet_link_send_line(status_message);
+            }
         }
     }
 

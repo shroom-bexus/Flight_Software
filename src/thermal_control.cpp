@@ -291,3 +291,30 @@ float thermal_control_get_output()
 {
     return controller_state.output_percent;
 }
+
+
+bool thermal_control_is_active()
+{
+    return controller_state.initialized;
+}
+
+
+float thermal_control_get_target()
+{
+    return THERMAL_TARGET_K;
+}
+
+
+float thermal_control_get_temperature()
+{
+    const TempSensor sensor =
+        get_control_sensor();
+
+    if (!max31865_is_enabled(sensor) ||
+        !max31865_data_valid(sensor))
+    {
+        return NAN;
+    }
+
+    return max31865_get_temperature(sensor);
+}
