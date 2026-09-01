@@ -90,4 +90,15 @@ void logger_log_airdos(
 );
 
 
+/**
+ * @brief Check whether the SD card and all required log files are ready.
+ */
+bool logger_is_ready();
+
+
+/**
+ * @brief Return the number of logger initialization errors.
+ */
+uint32_t logger_get_error_count();
+
 #endif // FLIGHT_SOFTWARE_LOGGER_H

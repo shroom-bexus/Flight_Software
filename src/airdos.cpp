@@ -140,3 +140,13 @@ uint32_t airdos_get_overflow_count()
     return overflow_count;
 }
 
+bool airdos_has_received_data()
+{
+    return message_received;
+}
+
+uint32_t airdos_get_last_message_ms()
+{
+    return last_message_ms;
+}
+

@@ -139,6 +139,7 @@ bool logger_init()
 
     if (!SD.begin(BUILTIN_SDCARD))
     {
+        ++logger_error_count;
         return false;
     }
 
@@ -152,6 +153,7 @@ bool logger_init()
             "max31865.csv",
             "timestamp,time_ms,sensor,temperature_K"))
     {
+        ++logger_error_count;
         success = false;
     }
 
@@ -431,4 +433,15 @@ void logger_update()
 #endif
 
 #endif
+}
+
+bool logger_is_ready()
+{
+    return logger_ready;
+}
+
+
+uint32_t logger_get_error_count()
+{
+    return logger_error_count;
 }

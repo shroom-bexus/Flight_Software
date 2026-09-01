@@ -238,7 +238,14 @@ bool wsen_pads_init()
     const uint8_t ctrl1 =
         CTRL1_BDU | (odr_bits << 4);
 
-    return write_register(REG_CTRL_1, ctrl1);
+    if (!write_register(REG_CTRL_1, ctrl1))
+    {
+        ++error_count;
+        return false;
+    }
+
+    initialized = true;
+    return true;
 }
 
 
