@@ -71,6 +71,17 @@ float thermal_control_get_temperature();
  */
 bool thermal_control_set_target(float target_k);
 
+/**
+ * @brief Enable or disable the thermal controller.
+ *
+ * Disabling the controller immediately switches all heaters off.
+ */
+void thermal_control_set_enabled(bool enabled);
 
+
+/**
+ * @brief Check whether the thermal controller is enabled.
+ */
+bool thermal_control_is_enabled();
 
 #endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H

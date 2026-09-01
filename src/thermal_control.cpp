@@ -36,6 +36,8 @@ struct ControllerState
     float target_k = THERMAL_TARGET_K;
 
     bool initialized = false;
+
+    bool enabled = true;
 };
 
 
@@ -59,13 +61,21 @@ TempSensor get_control_sensor()
     const float target_k =
         controller_state.target_k;
 
+    const bool enabled =
+        controller_state.enabled;
+
     controller_state = {};
 
     controller_state.target_k =
         target_k;
 
+    controller_state.enabled =
+        enabled;
+
     heater_set_all_power(0.0f);
 }
+
+
 } // namespace
 
 
@@ -76,7 +86,12 @@ TempSensor get_control_sensor()
 void thermal_control_init()
 {
     controller_state = {};
-    controller_state.target_k = THERMAL_TARGET_K;
+
+    controller_state.target_k =
+        THERMAL_TARGET_K;
+
+    controller_state.enabled =
+        true;
 
     heater_set_all_power(0.0f);
 }
@@ -99,7 +114,15 @@ void thermal_control_update()
     if (!max31865_is_enabled(sensor) ||
         !max31865_data_valid(sensor))
     {
-        reset_controller();
+        // Heater operation is not allowed without a valid
+        // control temperature.
+        heater_all_off();
+
+        if (controller_state.enabled)
+        {
+            reset_controller();
+        }
+
         return;
     }
 
@@ -114,9 +137,36 @@ void thermal_control_update()
 
     if (temperature_k >= THERMAL_MAX_TEMPERATURE_K)
     {
-        reset_controller();
+        // Safety shutdown applies to both automatic
+        // and manual heater operation.
+        heater_all_off();
+
+        if (controller_state.enabled)
+        {
+            reset_controller();
+        }
+
         return;
     }
+
+
+    // ------------------------------------------------------------------------
+    // Manual heater mode
+    // ------------------------------------------------------------------------
+    //
+    // When thermal control is disabled, the heater outputs may be
+    // controlled manually. The safety checks above remain active.
+    //
+
+    if (!controller_state.enabled)
+    {
+        return;
+    }
+
+
+    // ------------------------------------------------------------------------
+    // PID controller
+    // ------------------------------------------------------------------------
 
 
     const uint32_t current_time_ms =
@@ -345,4 +395,18 @@ bool thermal_control_set_target(float target_k)
     controller_state.target_k = target_k;
 
     return true;
+}
+
+void thermal_control_set_enabled(bool enabled)
+{
+    controller_state.enabled =
+        enabled;
+
+    reset_controller();
+}
+
+
+bool thermal_control_is_enabled()
+{
+    return controller_state.enabled;
 }

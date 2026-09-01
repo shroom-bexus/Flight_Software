@@ -355,15 +355,40 @@ void loop()
         {
             char message[96];
 
+
+            // ----------------------------------------------------------------
+            // Thermal controller
+            // ----------------------------------------------------------------
+
             snprintf(
                 message,
                 sizeof(message),
                 "THERMAL,%lu,%u,%.2f,%.3f,%.1f",
                 millis(),
-                thermal_control_is_active() ? 1 : 0,
+                thermal_control_is_enabled() ? 1 : 0,
                 thermal_control_get_target(),
                 thermal_control_get_temperature(),
                 thermal_control_get_output()
+            );
+
+            ethernet_link_send_line(
+                message
+            );
+
+
+            // ----------------------------------------------------------------
+            // Heater outputs
+            // ----------------------------------------------------------------
+
+            snprintf(
+                message,
+                sizeof(message),
+                "HEATERS,%lu,%.1f,%.1f,%.1f,%.1f",
+                millis(),
+                heater_get_power(Heater::HEATER_1),
+                heater_get_power(Heater::HEATER_2),
+                heater_get_power(Heater::HEATER_3),
+                heater_get_power(Heater::HEATER_4)
             );
 
             ethernet_link_send_line(
@@ -722,7 +747,9 @@ if (ethernet_link_connected() &&
         airdos_get_overflow_count()
     );
 
-    ethernet_link_send_line(message);
+    ethernet_link_send_line(
+        message
+    );
 
 #endif
 }
