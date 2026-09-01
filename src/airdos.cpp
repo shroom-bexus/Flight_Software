@@ -28,6 +28,9 @@ bool line_overflow = false;
 
 uint32_t overflow_count = 0;
 
+bool message_received = false;
+uint32_t last_message_ms = 0;
+
 
 // Additional UART receive buffer.
 //
@@ -47,6 +50,9 @@ void airdos_init()
     line_length = 0;
     line_overflow = false;
     overflow_count = 0;
+
+    message_received = false;
+    last_message_ms = 0;
 
     AIRDOS_1_SERIAL.addMemoryForRead(
         uart_rx_buffer,
@@ -95,6 +101,10 @@ bool airdos_update()
             line_buffer[line_length] = '\0';
             line_length = 0;
 
+            // A complete AIRDOS message was received.
+            message_received = true;
+            last_message_ms = millis();
+
             return true;
         }
 
@@ -129,3 +139,4 @@ uint32_t airdos_get_overflow_count()
 {
     return overflow_count;
 }
+

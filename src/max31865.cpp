@@ -316,3 +316,13 @@ uint32_t max31865_get_error_count(TempSensor sensor)
 
     return sensor_state[index].error_count;
 }
+
+bool max31865_is_initialized(TempSensor sensor)
+{
+    const uint8_t index =
+        static_cast<uint8_t>(sensor);
+
+    return index_valid(index) &&
+           channel_enabled[index] &&
+           sensor_state[index].initialized;
+}

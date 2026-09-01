@@ -7,40 +7,18 @@
 //
 // Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
-#ifndef FLIGHT_SOFTWARE_CONSOLE_H
-#define FLIGHT_SOFTWARE_CONSOLE_H
-
-#include <Arduino.h>
-
-
-enum class ConsoleLevel
-{
-    INFO,
-    WARN,
-    ERROR
-};
+#ifndef FLIGHT_SOFTWARE_COMMANDS_H
+#define FLIGHT_SOFTWARE_COMMANDS_H
 
 
 /**
- * @brief Print a message to the console.
+ * @brief Process one command received from the ground station.
  *
- * The message is sent to USB Serial and, if connected,
- * to the Ground Station via Ethernet.
+ * Command format:
+ *
+ * CMD,<command>[,<arguments>]
  */
-void console_println(
-    const char* message,
-    ConsoleLevel level = ConsoleLevel::INFO
-);
+void commands_handle(const char* message);
 
 
-/**
- * @brief Print a formatted message to the console.
- */
-void console_printf(
-    ConsoleLevel level,
-    const char* format,
-    ...
-);
-
-
-#endif // FLIGHT_SOFTWARE_CONSOLE_H
+#endif // FLIGHT_SOFTWARE_COMMANDS_H

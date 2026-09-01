@@ -61,4 +61,10 @@ bool wsen_hids_data_valid();
 uint32_t wsen_hids_get_error_count();
 
 
+/**
+ * @brief Check whether the sensor initialized successfully.
+ */
+bool wsen_hids_is_initialized();
+
+
 #endif // FLIGHT_SOFTWARE_WSEN_HIDS_H

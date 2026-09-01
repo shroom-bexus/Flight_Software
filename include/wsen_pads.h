@@ -9,6 +9,7 @@
 
 #ifndef FLIGHT_SOFTWARE_WSEN_PADS_H
 #define FLIGHT_SOFTWARE_WSEN_PADS_H
+#include <cstdint>
 
 
 /**
@@ -52,6 +53,17 @@ float wsen_pads_get_temperature();
  * @brief Check whether the most recent update was successful.
  */
 bool wsen_pads_data_valid();
+
+/**
+ * @brief Check whether the sensor initialized successfully.
+ */
+bool wsen_pads_is_initialized();
+
+
+/**
+ * @brief Return the accumulated number of communication errors.
+ */
+uint32_t wsen_pads_get_error_count();
 
 
 #endif // FLIGHT_SOFTWARE_WSEN_PADS_H

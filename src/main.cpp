@@ -18,39 +18,40 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <elapsedMillis.h>
-#include <cstring>
 
 #include "config.h"
 #include "logo.h"
 #include "rtc.h"
 #include "logger.h"
 
+
 #if ENABLE_MAX31865
-#include "max31865.h"
+    #include "max31865.h"
 #endif
 
 #if ENABLE_WSEN_PADS
-#include "wsen_pads.h"
+    #include "wsen_pads.h"
 #endif
 
 #if ENABLE_WSEN_HIDS
-#include "wsen_hids.h"
+    #include "wsen_hids.h"
 #endif
 
 #if ENABLE_AIRDOS
-#include "airdos.h"
+    #include "airdos.h"
 #endif
 
 #if ENABLE_ETHERNET
-#include "ethernet_link.h"
+    #include "ethernet_link.h"
+    #include "commands.h"
 #endif
 
 #if ENABLE_HEATERS
-#include "heater.h"
+    #include "heater.h"
 #endif
 
 #if ENABLE_THERMAL_CONTROL
-#include "thermal_control.h"
+    #include "thermal_control.h"
 #endif
 
 
@@ -62,24 +63,36 @@ namespace
 // ============================================================================
 
 #if ENABLE_MAX31865
-elapsedMillis max31865_timer;
+    elapsedMillis max31865_timer;
 #endif
 
 #if ENABLE_WSEN_PADS
-elapsedMillis wsen_pads_timer;
-bool wsen_pads_ready = false;
+    elapsedMillis wsen_pads_timer;
+    bool wsen_pads_ready = false;
 #endif
 
 #if ENABLE_WSEN_HIDS
-elapsedMillis wsen_hids_timer;
-bool wsen_hids_ready = false;
+    elapsedMillis wsen_hids_timer;
+    bool wsen_hids_ready = false;
 #endif
 
 #if ENABLE_ETHERNET
-    bool ethernet_ready = false;
-
-    char ethernet_rx_line[ETHERNET_RX_BUFFER_SIZE];
+    elapsedMillis health_telemetry_timer;
 #endif
+
+
+// ============================================================================
+// Ethernet state
+// ============================================================================
+
+#if ENABLE_ETHERNET
+
+bool ethernet_ready = false;
+
+char ethernet_rx_line[ETHERNET_RX_BUFFER_SIZE];
+
+#endif
+
 
 // ============================================================================
 // Helper functions
@@ -188,8 +201,8 @@ void setup()
 
 #if ENABLE_MAX31865
 
-    // Initialization may report FAILED if only one enabled channel fails.
-    // The remaining channels can still be used independently.
+    // One failed channel does not prevent the remaining channels
+    // from being used.
     print_init_result(
         "MAX31865",
         max31865_init()
@@ -276,7 +289,7 @@ void setup()
     Serial.println("Initialization complete.");
     Serial.println();
 
-} //Setup
+}
 
 
 // ============================================================================
@@ -285,7 +298,6 @@ void setup()
 
 void loop()
 {
-
     // ------------------------------------------------------------------------
     // Ethernet
     // ------------------------------------------------------------------------
@@ -300,29 +312,9 @@ void loop()
                 ethernet_rx_line,
                 sizeof(ethernet_rx_line)))
         {
-            if (strcmp(ethernet_rx_line, "CMD,PING") == 0)
-            {
-                ethernet_link_send_line("ACK,PING");
-            }
-            else if (strcmp(ethernet_rx_line, "CMD,STATUS") == 0)
-            {
-                ethernet_link_send_line("ACK,STATUS");
-
-                char status_message[128];
-
-                snprintf(
-                    status_message,
-                    sizeof(status_message),
-                    "STATUS,%lu,%u,%.2f,%.2f,%.2f",
-                    millis(),
-                    thermal_control_is_active() ? 1 : 0,
-                    thermal_control_get_target(),
-                    thermal_control_get_output(),
-                    thermal_control_get_temperature()
-                );
-
-                ethernet_link_send_line(status_message);
-            }
+            commands_handle(
+                ethernet_rx_line
+            );
         }
     }
 
@@ -341,31 +333,50 @@ void loop()
 
         max31865_update();
 
+
+        // --------------------------------------------------------------------
+        // Thermal control
+        // --------------------------------------------------------------------
+
 #if ENABLE_THERMAL_CONTROL
+
         thermal_control_update();
+
 #endif
 
-#if ENABLE_ETHERNET && ENABLE_HEATERS
 
-        if (max31865_data_valid(TempSensor::TEMP_1) &&
-            ethernet_link_connected())
+        // --------------------------------------------------------------------
+        // Thermal telemetry
+        // --------------------------------------------------------------------
+
+#if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
+
+        if (ethernet_link_connected())
         {
-            char message[80];
+            char message[96];
 
             snprintf(
                 message,
                 sizeof(message),
-                "THERMAL,%lu,%.3f,%.1f",
+                "THERMAL,%lu,%u,%.2f,%.3f,%.1f",
                 millis(),
-                max31865_get_temperature(TempSensor::TEMP_1),
-                heater_get_power(Heater::HEATER_1)
+                thermal_control_is_active() ? 1 : 0,
+                thermal_control_get_target(),
+                thermal_control_get_temperature(),
+                thermal_control_get_output()
             );
 
-            ethernet_link_send_line(message);
+            ethernet_link_send_line(
+                message
+            );
         }
 
 #endif
 
+
+        // --------------------------------------------------------------------
+        // MAX31865 logging
+        // --------------------------------------------------------------------
 
         for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
         {
@@ -398,8 +409,6 @@ void loop()
     {
         wsen_pads_timer = 0;
 
-        // Only use the measurement if new pressure and temperature
-        // data were received successfully.
         if (wsen_pads_update())
         {
             const float temperature_k =
@@ -416,23 +425,28 @@ void loop()
             );
 
 
+            // ----------------------------------------------------------------
+            // PADS telemetry
+            // ----------------------------------------------------------------
+
 #if ENABLE_ETHERNET
 
-            // Send measurement to the ground station.
             if (ethernet_link_connected())
             {
-                char telemetry[96];
+                char message[96];
 
                 snprintf(
-                    telemetry,
-                    sizeof(telemetry),
+                    message,
+                    sizeof(message),
                     "PADS,%lu,%.3f,%.2f",
                     millis(),
                     temperature_k,
                     pressure_pa
                 );
 
-                ethernet_link_send_line(telemetry);
+                ethernet_link_send_line(
+                    message
+                );
             }
 
 #endif
@@ -493,3 +507,220 @@ void loop()
 
 #endif
 }
+
+// ========================================================================
+// Health telemetry
+// ========================================================================
+
+#if ENABLE_ETHERNET
+
+if (ethernet_link_connected() &&
+    health_telemetry_timer >= HEALTH_TELEMETRY_PERIOD_MS)
+{
+    health_telemetry_timer = 0;
+
+    char message[128];
+
+    const uint32_t time_ms = millis();
+
+
+    // --------------------------------------------------------------------
+    // SD card
+    // --------------------------------------------------------------------
+
+#if ENABLE_SD_LOGGING
+
+    snprintf(
+        message,
+        sizeof(message),
+        "HEALTH,%lu,SD,%s,%lu",
+        time_ms,
+        logger_is_ready() ? "OK" : "FAULT",
+        logger_get_error_count()
+    );
+
+    ethernet_link_send_line(message);
+
+#endif
+
+
+    // --------------------------------------------------------------------
+    // MAX31865
+    // --------------------------------------------------------------------
+
+#if ENABLE_MAX31865
+
+    for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
+    {
+        const TempSensor sensor =
+            static_cast<TempSensor>(i);
+
+        if (!max31865_is_enabled(sensor))
+        {
+            continue;
+        }
+
+
+        const char* state;
+
+        if (!max31865_is_initialized(sensor))
+        {
+            state = "FAULT";
+        }
+        else if (max31865_data_valid(sensor))
+        {
+            state = "OK";
+        }
+        else if (max31865_get_error_count(sensor) == 0)
+        {
+            state = "WAITING";
+        }
+        else
+        {
+            state = "FAULT";
+        }
+
+
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,MAX31865,%u,%s,%u,%lu",
+            time_ms,
+            i + 1,
+            state,
+            max31865_get_fault(sensor),
+            max31865_get_error_count(sensor)
+        );
+
+        ethernet_link_send_line(message);
+    }
+
+#endif
+
+
+    // --------------------------------------------------------------------
+    // WSEN-PADS
+    // --------------------------------------------------------------------
+
+#if ENABLE_WSEN_PADS
+
+    const char* pads_state;
+
+    if (!wsen_pads_is_initialized())
+    {
+        pads_state = "FAULT";
+    }
+    else if (wsen_pads_data_valid())
+    {
+        pads_state = "OK";
+    }
+    else if (wsen_pads_get_error_count() == 0)
+    {
+        pads_state = "WAITING";
+    }
+    else
+    {
+        pads_state = "FAULT";
+    }
+
+
+    snprintf(
+        message,
+        sizeof(message),
+        "HEALTH,%lu,PADS,%s,%lu",
+        time_ms,
+        pads_state,
+        wsen_pads_get_error_count()
+    );
+
+    ethernet_link_send_line(message);
+
+#endif
+
+
+    // --------------------------------------------------------------------
+    // WSEN-HIDS
+    // --------------------------------------------------------------------
+
+#if ENABLE_WSEN_HIDS
+
+    const char* hids_state;
+
+    if (!wsen_hids_is_initialized())
+    {
+        hids_state = "FAULT";
+    }
+    else if (wsen_hids_data_valid())
+    {
+        hids_state = "OK";
+    }
+    else if (wsen_hids_get_error_count() == 0)
+    {
+        hids_state = "WAITING";
+    }
+    else
+    {
+        hids_state = "FAULT";
+    }
+
+
+    snprintf(
+        message,
+        sizeof(message),
+        "HEALTH,%lu,HIDS,%s,%lu",
+        time_ms,
+        hids_state,
+        wsen_hids_get_error_count()
+    );
+
+    ethernet_link_send_line(message);
+
+#endif
+
+
+    // --------------------------------------------------------------------
+    // AIRDOS
+    // --------------------------------------------------------------------
+
+#if ENABLE_AIRDOS
+
+    const char* airdos_state;
+    uint32_t last_message_age = 0;
+
+
+    if (!airdos_has_received_data())
+    {
+        airdos_state = "WAITING";
+    }
+    else
+    {
+        last_message_age =
+            time_ms - airdos_get_last_message_ms();
+
+        if (last_message_age > AIRDOS_TIMEOUT_MS)
+        {
+            airdos_state = "FAULT";
+        }
+        else
+        {
+            airdos_state = "OK";
+        }
+    }
+
+
+    snprintf(
+        message,
+        sizeof(message),
+        "HEALTH,%lu,AIRDOS,%s,%lu,%lu",
+        time_ms,
+        airdos_state,
+        last_message_age,
+        airdos_get_overflow_count()
+    );
+
+    ethernet_link_send_line(message);
+
+#endif
+}
+
+#endif

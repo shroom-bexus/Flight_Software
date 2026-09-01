@@ -38,6 +38,7 @@ constexpr uint8_t HIDS_DATA_LENGTH = 6;
 float temperature_k = NAN;
 float humidity_percent = NAN;
 
+bool initialized = false;
 bool last_measurement_valid = false;
 uint32_t error_count = 0;
 
@@ -84,10 +85,11 @@ bool wsen_hids_init()
 {
     temperature_k = NAN;
     humidity_percent = NAN;
+
+    initialized = false;
     last_measurement_valid = false;
     error_count = 0;
 
-    // Check whether the sensor responds on the I2C bus.
     Wire.beginTransmission(WSEN_HIDS_I2C_ADDRESS);
 
     if (Wire.endTransmission() != 0)
@@ -95,6 +97,8 @@ bool wsen_hids_init()
         ++error_count;
         return false;
     }
+
+    initialized = true;
 
     return true;
 }
@@ -203,4 +207,9 @@ bool wsen_hids_data_valid()
 uint32_t wsen_hids_get_error_count()
 {
     return error_count;
+}
+
+bool wsen_hids_is_initialized()
+{
+    return initialized;
 }

@@ -50,10 +50,13 @@ constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
 // Stored measurement data
 // ============================================================================
 
-float pressure_pa = NAN;
-float temperature_k = NAN;
+    float pressure_pa = NAN;
+    float temperature_k = NAN;
 
-bool last_measurement_valid = false;
+    bool initialized = false;
+    bool last_measurement_valid = false;
+
+    uint32_t error_count = 0;
 
 
 // ============================================================================
@@ -174,7 +177,10 @@ bool wsen_pads_init()
 {
     pressure_pa = NAN;
     temperature_k = NAN;
+
+    initialized = false;
     last_measurement_valid = false;
+    error_count = 0;
 
     // Verify that the expected sensor is connected.
     uint8_t device_id;
@@ -323,4 +329,15 @@ float wsen_pads_get_temperature()
 bool wsen_pads_data_valid()
 {
     return last_measurement_valid;
+}
+
+bool wsen_pads_is_initialized()
+{
+    return initialized;
+}
+
+
+uint32_t wsen_pads_get_error_count()
+{
+    return error_count;
 }

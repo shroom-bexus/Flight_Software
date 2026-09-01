@@ -42,5 +42,18 @@ const char* airdos_get_data();
  */
 uint32_t airdos_get_overflow_count();
 
+/**
+ * @brief Check whether at least one complete AIRDOS message was received.
+ */
+bool airdos_has_received_data();
+
+
+/**
+ * @brief Return the time of the most recently received complete message.
+ *
+ * @return millis() timestamp of the last message.
+ */
+uint32_t airdos_get_last_message_ms();
+
 
 #endif // FLIGHT_SOFTWARE_AIRDOS_H

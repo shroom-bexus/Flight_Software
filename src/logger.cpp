@@ -49,6 +49,9 @@ File airdos_file;
 
 uint32_t last_flush_time = 0;
 
+bool logger_ready = false;
+uint32_t logger_error_count = 0;
+
 
 // ============================================================================
 // Helper functions
@@ -125,6 +128,9 @@ void flush_file(File& file)
 
 bool logger_init()
 {
+    logger_ready = false;
+    logger_error_count = 0;
+
 #if !ENABLE_SD_LOGGING
 
     return true;
@@ -159,6 +165,7 @@ bool logger_init()
             "wsen_pads.csv",
             "timestamp,time_ms,temperature_K,pressure_Pa"))
     {
+        ++logger_error_count;
         success = false;
     }
 
@@ -172,6 +179,7 @@ bool logger_init()
             "wsen_hids.csv",
             "timestamp,time_ms,temperature_K,humidity_percent"))
     {
+        ++logger_error_count;
         success = false;
     }
 
@@ -185,6 +193,7 @@ bool logger_init()
             "wsen_isds.csv",
             "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"))
     {
+        ++logger_error_count;
         success = false;
     }
 
@@ -198,12 +207,13 @@ bool logger_init()
             "airdos.csv",
             "timestamp,time_ms,sensor,data"))
     {
+        ++logger_error_count;
         success = false;
     }
 
 #endif
 
-
+    logger_ready = success;
     return success;
 
 #endif

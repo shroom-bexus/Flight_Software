@@ -21,6 +21,7 @@
 #include <Arduino.h>
 #include "max31865.h"
 
+
 // ============================================================================
 // Build target
 // ============================================================================
@@ -50,7 +51,6 @@
 #if FLIGHT_PRIMARY
 
 #define ENABLE_ETHERNET         true
-#define ENABLE_TELEMETRY        true
 #define ENABLE_SD_LOGGING       true
 #define ENABLE_HEATERS          true
 #define ENABLE_THERMAL_CONTROL  true
@@ -64,7 +64,6 @@
 #elif FLIGHT_SECONDARY
 
 #define ENABLE_ETHERNET         false
-#define ENABLE_TELEMETRY        false
 #define ENABLE_SD_LOGGING       true
 #define ENABLE_HEATERS          false
 #define ENABLE_THERMAL_CONTROL  false
@@ -76,14 +75,6 @@
 #define ENABLE_AIRDOS           true
 
 #endif
-
-
-// ============================================================================
-// Console
-// ============================================================================
-
-#define ENABLE_SERIAL_CONSOLE   true
-#define ENABLE_ETHERNET_CONSOLE true
 
 
 // ============================================================================
@@ -133,6 +124,7 @@ constexpr uint8_t MAX31865_CHANNEL_COUNT = 9;
 //
 // Set a channel to false if no RTD is connected.
 // Disabled channels are completely skipped during initialization and sampling.
+//
 
 #define MAX31865_TEMP_1_ENABLED true
 #define MAX31865_TEMP_2_ENABLED false
@@ -159,6 +151,7 @@ constexpr float MAX31865_RNOMINAL = 1000.0f;
 //
 // Replace these values with the individually measured resistance
 // of each MAX31865 reference resistor.
+//
 
 constexpr float MAX31865_RREF_1 = 4300.0f;
 constexpr float MAX31865_RREF_2 = 4300.0f;
@@ -176,9 +169,11 @@ constexpr float MAX31865_RREF_9 = 4300.0f;
 // ---------------------------------------------------------------------------
 //
 // Linear calibration:
+//
 // T_calibrated = T_measured * scale + offset
 //
 // Leave scale = 1.0 and offset = 0.0 until calibration data is available.
+//
 
 constexpr float MAX31865_SCALE_1 = 1.0f;
 constexpr float MAX31865_SCALE_2 = 1.0f;
@@ -207,6 +202,7 @@ constexpr float MAX31865_OFFSET_C_9 = 0.0f;
 
 #define MAX31865_SPI_BUS SPI
 
+
 // ---------------------------------------------------------------------------
 // Chip-select pins
 // ---------------------------------------------------------------------------
@@ -228,6 +224,7 @@ constexpr uint8_t MAX31865_CS_9 = 36;
 
 constexpr uint8_t HEATER_CHANNEL_COUNT = 4;
 
+
 // ---------------------------------------------------------------------------
 // Enabled channels
 // ---------------------------------------------------------------------------
@@ -237,6 +234,7 @@ constexpr uint8_t HEATER_CHANNEL_COUNT = 4;
 #define HEATER_3_ENABLED true
 #define HEATER_4_ENABLED true
 
+
 // ---------------------------------------------------------------------------
 // GPIO pins
 // ---------------------------------------------------------------------------
@@ -245,6 +243,7 @@ constexpr uint8_t HEATER_PIN_1 = 2;
 constexpr uint8_t HEATER_PIN_2 = 3;
 constexpr uint8_t HEATER_PIN_3 = 4;
 constexpr uint8_t HEATER_PIN_4 = 5;
+
 
 // ---------------------------------------------------------------------------
 // PWM configuration
@@ -270,10 +269,8 @@ constexpr float HEATER_4_MAX_POWER_PERCENT = 100.0f;
 constexpr TempSensor THERMAL_CONTROL_SENSOR =
     TempSensor::TEMP_1;
 
-
 // Target temperature.
 constexpr float THERMAL_TARGET_K = 298.15f;
-
 
 // PID parameters.
 //
@@ -281,15 +278,12 @@ constexpr float THERMAL_TARGET_K = 298.15f;
 // Kp: % / K
 // Ki: % / (K s)
 // Kd: % s / K
-
 constexpr float THERMAL_KP = 0.0f;
 constexpr float THERMAL_KI = 0.0f;
 constexpr float THERMAL_KD = 0.0f;
 
-
 // Maximum allowed heater output.
 constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
-
 
 // Software safety cutoff.
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
@@ -316,11 +310,11 @@ constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
 
 // UART baud rate used by AIRDOS03.
 constexpr uint32_t AIRDOS_BAUD_RATE = 115200;
+constexpr uint32_t AIRDOS_TIMEOUT_MS = 15000;
 
 // First AIRDOS sensor.
 // RX9/TX9 on the SHROOM PCB is connected to Teensy Serial7.
 #define AIRDOS_1_SERIAL Serial7
-
 
 
 // ============================================================================
@@ -330,34 +324,37 @@ constexpr uint32_t AIRDOS_BAUD_RATE = 115200;
 // SHROOM experiment IP assigned by BEXUS/SSC.
 constexpr uint8_t ETHERNET_LOCAL_IP[4] =
 {
-    172,16,18,131
-};
-
-// Ground Station IP assigned by BEXUS/SSC.
-constexpr uint8_t GROUND_STATION_IP[4] =
-{
-    172,16,18,130
+    172, 16, 18, 131
 };
 
 // TODO: Confirm subnet mask with SSC.
 constexpr uint8_t ETHERNET_SUBNET[4] =
 {
-    255,255,255,0
+    255, 255, 255, 0
 };
 
 constexpr uint8_t ETHERNET_GATEWAY[4] =
 {
-    0,0,0,0
+    0, 0, 0, 0
 };
 
 constexpr uint8_t ETHERNET_DNS[4] =
 {
-    0,0,0,0
+    0, 0, 0, 0
 };
 
 constexpr uint16_t ETHERNET_TCP_PORT = 5000;
 
 constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
+
+// ============================================================================
+// Health telemetry
+// ============================================================================
+
+constexpr uint32_t HEALTH_TELEMETRY_PERIOD_MS = 5000;
+
+
+
 
 
 #endif // FLIGHT_SOFTWARE_CONFIG_H
