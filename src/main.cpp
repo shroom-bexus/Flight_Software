@@ -686,10 +686,16 @@ if (ethernet_link_connected() &&
     const char* airdos_state;
     uint32_t last_message_age = 0;
 
-
     if (!airdos_has_received_data())
     {
-        airdos_state = "WAITING";
+        if (time_ms > AIRDOS_TIMEOUT_MS)
+        {
+            airdos_state = "FAULT";
+        }
+        else
+        {
+            airdos_state = "WAITING";
+        }
     }
     else
     {
@@ -705,7 +711,6 @@ if (ethernet_link_connected() &&
             airdos_state = "OK";
         }
     }
-
 
     snprintf(
         message,

@@ -62,4 +62,15 @@ float thermal_control_get_target();
  */
 float thermal_control_get_temperature();
 
+/**
+ * @brief Change the thermal control target.
+ *
+ * @param target_k New target temperature in Kelvin.
+ *
+ * @return true if the target was accepted.
+ */
+bool thermal_control_set_target(float target_k);
+
+
+
 #endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H

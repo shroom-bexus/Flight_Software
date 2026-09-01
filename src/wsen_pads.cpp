@@ -263,6 +263,7 @@ bool wsen_pads_update()
 
     if (!read_register(REG_STATUS, status))
     {
+        ++error_count;
         return false;
     }
 
@@ -278,6 +279,7 @@ bool wsen_pads_update()
 
     if (!read_registers(REG_PRESS_XL, data, sizeof(data)))
     {
+        ++error_count;
         return false;
     }
 

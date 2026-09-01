@@ -33,6 +33,8 @@ struct ControllerState
 
     float output_percent = 0.0f;
 
+    float target_k = THERMAL_TARGET_K;
+
     bool initialized = false;
 };
 
@@ -52,13 +54,18 @@ TempSensor get_control_sensor()
 }
 
 
-void reset_controller()
+    void reset_controller()
 {
+    const float target_k =
+        controller_state.target_k;
+
     controller_state = {};
+
+    controller_state.target_k =
+        target_k;
 
     heater_set_all_power(0.0f);
 }
-
 } // namespace
 
 
@@ -68,7 +75,10 @@ void reset_controller()
 
 void thermal_control_init()
 {
-    reset_controller();
+    controller_state = {};
+    controller_state.target_k = THERMAL_TARGET_K;
+
+    heater_set_all_power(0.0f);
 }
 
 
@@ -114,8 +124,8 @@ void thermal_control_update()
 
 
     const float error =
-        THERMAL_TARGET_K -
-        temperature_k;
+       controller_state.target_k -
+       temperature_k;
 
 
     // ------------------------------------------------------------------------
@@ -301,7 +311,7 @@ bool thermal_control_is_active()
 
 float thermal_control_get_target()
 {
-    return THERMAL_TARGET_K;
+    return controller_state.target_k;
 }
 
 
@@ -317,4 +327,22 @@ float thermal_control_get_temperature()
     }
 
     return max31865_get_temperature(sensor);
+}
+
+bool thermal_control_set_target(float target_k)
+{
+    if (!isfinite(target_k))
+    {
+        return false;
+    }
+
+    if (target_k <= 0.0f ||
+        target_k >= THERMAL_MAX_TEMPERATURE_K)
+    {
+        return false;
+    }
+
+    controller_state.target_k = target_k;
+
+    return true;
 }

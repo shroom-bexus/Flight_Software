@@ -15,6 +15,7 @@
 #include "commands.h"
 
 #include <cstring>
+#include <cstdlib>
 
 #include "config.h"
 
@@ -22,6 +23,7 @@
 #if ENABLE_ETHERNET
 
 #include "ethernet_link.h"
+#include "thermal_control.h"
 
 
 namespace
@@ -30,6 +32,7 @@ namespace
 // Every command handler receives the text following the command name.
 //
 // Example:
+//
 // CMD,SET_TARGET,298.15
 //
 // args = "298.15"
@@ -57,6 +60,52 @@ void handle_ping(const char* args)
 }
 
 
+void handle_set_target(const char* args)
+{
+    char* end = nullptr;
+
+    const float target_k =
+        strtof(args, &end);
+
+
+    // Argument must contain exactly one valid number.
+    if (args == end ||
+        *end != '\0')
+    {
+        ethernet_link_send_line(
+            "NACK,SET_TARGET,INVALID_VALUE"
+        );
+
+        return;
+    }
+
+
+    // Reject unsafe or otherwise invalid target temperatures.
+    if (!thermal_control_set_target(target_k))
+    {
+        ethernet_link_send_line(
+            "NACK,SET_TARGET,OUT_OF_RANGE"
+        );
+
+        return;
+    }
+
+
+    char response[48];
+
+    snprintf(
+        response,
+        sizeof(response),
+        "ACK,SET_TARGET,%.2f",
+        target_k
+    );
+
+    ethernet_link_send_line(
+        response
+    );
+}
+
+
 // ============================================================================
 // Command table
 // ============================================================================
@@ -69,11 +118,11 @@ void handle_ping(const char* args)
 
 const CommandEntry command_table[] =
 {
-    {"PING", handle_ping},
+    {"PING",       handle_ping},
+    {"SET_TARGET", handle_set_target},
 
     // Future examples:
-    // {"SET_TARGET", handle_set_target},
-    // {"SET_PID",    handle_set_pid},
+    // {"SET_PID", handle_set_pid},
 };
 
 
