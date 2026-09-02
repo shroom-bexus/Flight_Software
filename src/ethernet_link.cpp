@@ -4,6 +4,9 @@
 
 #include <NativeEthernet.h>
 
+#include <cmath>
+#include <cstring>
+
 #include "config.h"
 
 
@@ -23,12 +26,68 @@ namespace
     bool line_ready = false;
 
 
+    // Downlink rate limiting
+
+    float downlink_limit_kbit_s =
+        ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S;
+
+    uint32_t downlink_window_start_ms = 0;
+    size_t downlink_window_bytes = 0;
+
+
     // Helper functions
 
     void reset_receive_buffer()
     {
         receive_length = 0;
         line_ready = false;
+    }
+
+
+    void reset_downlink_window()
+    {
+        downlink_window_start_ms = millis();
+        downlink_window_bytes = 0;
+    }
+
+
+    bool send_line(const char* message, bool priority)
+    {
+        if (!ethernet_link_connected() || message == nullptr)
+        {
+            return false;
+        }
+
+        const size_t message_bytes = std::strlen(message) + 2;
+        const uint32_t now = millis();
+
+        if (now - downlink_window_start_ms >= 1000)
+        {
+            reset_downlink_window();
+        }
+
+        if (downlink_limit_kbit_s > 0.0f)
+        {
+            const size_t maximum_bytes = static_cast<size_t>(
+                downlink_limit_kbit_s * 125.0f
+            );
+
+            // Ordinary telemetry may use at most 80 % of each window.
+            const size_t ordinary_bytes = maximum_bytes * 4 / 5;
+            const size_t allowed_bytes = priority
+                ? maximum_bytes
+                : ordinary_bytes;
+
+            if (downlink_window_bytes > allowed_bytes ||
+                message_bytes > allowed_bytes - downlink_window_bytes)
+            {
+                return false;
+            }
+        }
+
+        const size_t bytes_sent = client.println(message);
+        downlink_window_bytes += bytes_sent;
+        return bytes_sent == message_bytes;
     }
 
 
@@ -112,6 +171,7 @@ bool ethernet_link_init()
     server.begin();
 
     reset_receive_buffer();
+    reset_downlink_window();
 
     return true;
 }
@@ -138,6 +198,7 @@ void ethernet_link_update()
         {
             client = new_client;
             reset_receive_buffer();
+            reset_downlink_window();
 
             Serial.println("Ground station connected.");
         }
@@ -239,13 +300,38 @@ bool ethernet_link_send_line(
     const char* message
 )
 {
-    if (!ethernet_link_connected() ||
-        message == nullptr)
+    return send_line(message, false);
+}
+
+
+bool ethernet_link_send_priority_line(
+    const char* message
+)
+{
+    return send_line(message, true);
+}
+
+
+bool ethernet_link_set_downlink_limit(float limit_kbit_s)
+{
+    const bool unlimited = limit_kbit_s == 0.0f;
+    const bool within_range =
+        limit_kbit_s >= ETHERNET_MIN_DOWNLINK_LIMIT_KBIT_S &&
+        limit_kbit_s <= ETHERNET_MAX_DOWNLINK_LIMIT_KBIT_S;
+
+    if (!std::isfinite(limit_kbit_s) ||
+        (!unlimited && !within_range))
     {
         return false;
     }
 
-    client.println(message);
-
+    downlink_limit_kbit_s = limit_kbit_s;
+    reset_downlink_window();
     return true;
+}
+
+
+float ethernet_link_get_downlink_limit()
+{
+    return downlink_limit_kbit_s;
 }

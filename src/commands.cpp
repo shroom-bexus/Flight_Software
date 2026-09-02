@@ -39,12 +39,12 @@ void send_reply(const char* type, const char* command, const char* detail = null
     if (detail)
     {
         snprintf(response, sizeof(response), "%s,%s,%s", type, command, detail);
-        ethernet_link_send_line(response);
+        ethernet_link_send_priority_line(response);
         return;
     }
 
     snprintf(response, sizeof(response), "%s,%s", type, command);
-    ethernet_link_send_line(response);
+    ethernet_link_send_priority_line(response);
 }
 
 bool parse_float(const char* text, float& value)
@@ -171,6 +171,26 @@ void handle_set_kd(const char* args)
     handle_set_gain(args, PidGain::KD, "SET_KD");
 }
 
+void handle_set_downlink_limit(const char* args)
+{
+    float limit_kbit_s;
+    if (!parse_float(args, limit_kbit_s))
+    {
+        send_reply("NACK", "SET_DOWNLINK_LIMIT", "INVALID_VALUE");
+        return;
+    }
+
+    if (!ethernet_link_set_downlink_limit(limit_kbit_s))
+    {
+        send_reply("NACK", "SET_DOWNLINK_LIMIT", "OUT_OF_RANGE");
+        return;
+    }
+
+    char detail[16];
+    snprintf(detail, sizeof(detail), "%.6g", limit_kbit_s);
+    send_reply("ACK", "SET_DOWNLINK_LIMIT", detail);
+}
+
 void handle_set_heater(const char* args)
 {
     // Manual heater commands must not compete with the PID controller.
@@ -256,6 +276,7 @@ const CommandEntry command_table[] =
     {"SET_KP", handle_set_kp},
     {"SET_KI", handle_set_ki},
     {"SET_KD", handle_set_kd},
+    {"SET_DOWNLINK_LIMIT", handle_set_downlink_limit},
     {"SET_HEATER", handle_set_heater}
 };
 } // namespace
@@ -280,7 +301,7 @@ void commands_handle(const char* message)
         return;
     }
 
-    ethernet_link_send_line("NACK,UNKNOWN_COMMAND");
+    ethernet_link_send_priority_line("NACK,UNKNOWN_COMMAND");
 }
 
 #endif // ENABLE_ETHERNET
