@@ -14,7 +14,6 @@
 
 namespace
 {
-
     /**
      * @brief Provide the Teensy hardware RTC time to TimeLib.
      */
@@ -22,7 +21,6 @@ namespace
     {
         return Teensy3Clock.get();
     }
-
 } // namespace
 
 

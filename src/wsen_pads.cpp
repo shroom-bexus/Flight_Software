@@ -17,38 +17,37 @@
 
 namespace
 {
+    // ============================================================================
+    // Registers
+    // ============================================================================
 
-// ============================================================================
-// Registers
-// ============================================================================
+    constexpr uint8_t REG_DEVICE_ID = 0x0F;
+    constexpr uint8_t REG_CTRL_1 = 0x10;
+    constexpr uint8_t REG_CTRL_2 = 0x11;
+    constexpr uint8_t REG_STATUS = 0x27;
+    constexpr uint8_t REG_PRESS_XL = 0x28;
 
-constexpr uint8_t REG_DEVICE_ID = 0x0F;
-constexpr uint8_t REG_CTRL_1    = 0x10;
-constexpr uint8_t REG_CTRL_2    = 0x11;
-constexpr uint8_t REG_STATUS    = 0x27;
-constexpr uint8_t REG_PRESS_XL  = 0x28;
-
-constexpr uint8_t DEVICE_ID = 0xB3;
-
-
-// STATUS register
-constexpr uint8_t STATUS_P_DA = 0x01;
-constexpr uint8_t STATUS_T_DA = 0x02;
+    constexpr uint8_t DEVICE_ID = 0xB3;
 
 
-// CTRL_REG1
-constexpr uint8_t CTRL1_BDU = 0x02;
+    // STATUS register
+    constexpr uint8_t STATUS_P_DA = 0x01;
+    constexpr uint8_t STATUS_T_DA = 0x02;
 
 
-// CTRL_REG2
-constexpr uint8_t CTRL2_LOW_NOISE = 0x02;
-constexpr uint8_t CTRL2_SWRESET   = 0x04;
-constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
+    // CTRL_REG1
+    constexpr uint8_t CTRL1_BDU = 0x02;
 
 
-// ============================================================================
-// Stored measurement data
-// ============================================================================
+    // CTRL_REG2
+    constexpr uint8_t CTRL2_LOW_NOISE = 0x02;
+    constexpr uint8_t CTRL2_SWRESET = 0x04;
+    constexpr uint8_t CTRL2_AUTO_INC = 0x10;
+
+
+    // ============================================================================
+    // Stored measurement data
+    // ============================================================================
 
     float pressure_pa = NAN;
     float temperature_k = NAN;
@@ -59,78 +58,78 @@ constexpr uint8_t CTRL2_AUTO_INC  = 0x10;
     uint32_t error_count = 0;
 
 
-// ============================================================================
-// I2C helper functions
-// ============================================================================
+    // ============================================================================
+    // I2C helper functions
+    // ============================================================================
 
-bool write_register(const uint8_t reg, const uint8_t value)
-{
-    Wire.beginTransmission(WSEN_PADS_ADDRESS);
-
-    Wire.write(reg);
-    Wire.write(value);
-
-    return Wire.endTransmission() == 0;
-}
-
-
-bool read_register(const uint8_t reg, uint8_t &value)
-{
-    Wire.beginTransmission(WSEN_PADS_ADDRESS);
-    Wire.write(reg);
-
-    if (Wire.endTransmission(false) != 0)
+    bool write_register(const uint8_t reg, const uint8_t value)
     {
-        return false;
+        Wire.beginTransmission(WSEN_PADS_ADDRESS);
+
+        Wire.write(reg);
+        Wire.write(value);
+
+        return Wire.endTransmission() == 0;
     }
 
-    if (Wire.requestFrom(
+
+    bool read_register(const uint8_t reg, uint8_t& value)
+    {
+        Wire.beginTransmission(WSEN_PADS_ADDRESS);
+        Wire.write(reg);
+
+        if (Wire.endTransmission(false) != 0)
+        {
+            return false;
+        }
+
+        if (Wire.requestFrom(
             static_cast<uint8_t>(WSEN_PADS_ADDRESS),
             static_cast<uint8_t>(1)) != 1)
-    {
-        return false;
+        {
+            return false;
+        }
+
+        value = Wire.read();
+
+        return true;
     }
 
-    value = Wire.read();
 
-    return true;
-}
-
-
-bool read_registers(uint8_t start_reg, uint8_t *buffer, uint8_t length)
-{
-    Wire.beginTransmission(WSEN_PADS_ADDRESS);
-    Wire.write(start_reg);
-
-    if (Wire.endTransmission(false) != 0)
+    bool read_registers(uint8_t start_reg, uint8_t* buffer, uint8_t length)
     {
-        return false;
-    }
+        Wire.beginTransmission(WSEN_PADS_ADDRESS);
+        Wire.write(start_reg);
 
-    if (Wire.requestFrom(
+        if (Wire.endTransmission(false) != 0)
+        {
+            return false;
+        }
+
+        if (Wire.requestFrom(
             static_cast<uint8_t>(WSEN_PADS_ADDRESS),
             length) != length)
-    {
-        return false;
+        {
+            return false;
+        }
+
+        for (uint8_t i = 0; i < length; ++i)
+        {
+            buffer[i] = Wire.read();
+        }
+
+        return true;
     }
 
-    for (uint8_t i = 0; i < length; ++i)
+
+    // ============================================================================
+    // Output data rate
+    // ============================================================================
+
+    bool get_odr_bits(uint16_t odr_hz, uint8_t& bits)
     {
-        buffer[i] = Wire.read();
-    }
-
-    return true;
-}
-
-
-// ============================================================================
-// Output data rate
-// ============================================================================
-
-bool get_odr_bits(uint16_t odr_hz, uint8_t &bits)
-{
-    switch (odr_hz)
-    {
+        switch (odr_hz)
+        {
         case 1:
             bits = 0b001;
             break;
@@ -161,11 +160,10 @@ bool get_odr_bits(uint16_t odr_hz, uint8_t &bits)
 
         default:
             return false;
+        }
+
+        return true;
     }
-
-    return true;
-}
-
 } // namespace
 
 
@@ -287,8 +285,8 @@ bool wsen_pads_update()
     // Pressure is stored as a signed 24-bit two's-complement value.
     int32_t raw_pressure =
         (static_cast<int32_t>(data[2]) << 16) |
-        (static_cast<int32_t>(data[1]) << 8)  |
-         static_cast<int32_t>(data[0]);
+        (static_cast<int32_t>(data[1]) << 8) |
+        static_cast<int32_t>(data[0]);
 
     // Extend the 24-bit sign bit to 32 bits.
     if (raw_pressure & 0x00800000)
@@ -301,7 +299,7 @@ bool wsen_pads_update()
     const int16_t raw_temperature =
         static_cast<int16_t>(
             (static_cast<uint16_t>(data[4]) << 8) |
-             static_cast<uint16_t>(data[3])
+            static_cast<uint16_t>(data[3])
         );
 
 

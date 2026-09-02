@@ -7,75 +7,104 @@
 //
 // Stratospheric High-Altitude Radiation Observation of Organismic Mycology
 
-#include "thermal_control.h"
 
 #include <Arduino.h>
+#include <EEPROM.h>
 
 #include "config.h"
 #include "heater.h"
 #include "max31865.h"
-
+#include "thermal_control.h"
 
 namespace
 {
+    // ============================================================================
+    // Runtime state
+    // ============================================================================
 
-// ============================================================================
-// Runtime state
-// ============================================================================
+    struct ControllerState
+    {
+        float integral = 0.0f;
+        float previous_temperature_k = NAN;
+        uint32_t previous_time_ms = 0;
+        float output_percent = 0.0f;
+        float target_k = THERMAL_TARGET_K;
+        bool initialized = false;
+        bool enabled = true;
+    };
 
-struct ControllerState
-{
-    float integral = 0.0f;
+    ControllerState controller_state;
 
-    float previous_temperature_k = NAN;
+    // ============================================================================
+    // Persistent settings
+    // ============================================================================
 
-    uint32_t previous_time_ms = 0;
+    constexpr uint32_t SETTINGS_MAGIC =
+        0x5348524D; // "SHRM"
 
-    float output_percent = 0.0f;
+    struct PersistentSettings
+    {
+        uint32_t magic;
+        bool thermal_enabled;
+        float target_k;
+        float heater_power[HEATER_CHANNEL_COUNT];
+    };
 
-    float target_k = THERMAL_TARGET_K;
+    PersistentSettings settings;
 
-    bool initialized = false;
+    void save_settings()
+    {
+        EEPROM.put(
+            0,
+            settings
+        );
+    }
 
-    bool enabled = true;
-};
+    void load_settings()
+    {
+        EEPROM.get(
+            0,
+            settings
+        );
 
+        // No valid settings stored yet -> use defaults.
+        if (settings.magic != SETTINGS_MAGIC)
+        {
+            settings = {};
+            settings.magic =
+                SETTINGS_MAGIC;
+            settings.thermal_enabled =
+                true;
+            settings.target_k =
+                THERMAL_TARGET_K;
+            save_settings();
+        }
+    }
 
-ControllerState controller_state;
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
 
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-TempSensor get_control_sensor()
-{
-    return static_cast<TempSensor>(
-        THERMAL_CONTROL_SENSOR
-    );
-}
-
+    TempSensor get_control_sensor()
+    {
+        return static_cast<TempSensor>(
+            THERMAL_CONTROL_SENSOR
+        );
+    }
 
     void reset_controller()
-{
-    const float target_k =
-        controller_state.target_k;
-
-    const bool enabled =
-        controller_state.enabled;
-
-    controller_state = {};
-
-    controller_state.target_k =
-        target_k;
-
-    controller_state.enabled =
-        enabled;
-
-    heater_set_all_power(0.0f);
-}
-
-
+    {
+        const float target_k =
+            controller_state.target_k;
+        const bool enabled =
+            controller_state.enabled;
+        controller_state = {};
+        controller_state.target_k =
+            target_k;
+        controller_state.enabled =
+            enabled;
+        heater_set_all_power(0.0f);
+    }
 } // namespace
 
 
@@ -85,15 +114,20 @@ TempSensor get_control_sensor()
 
 void thermal_control_init()
 {
+    load_settings();
+
     controller_state = {};
 
     controller_state.target_k =
-        THERMAL_TARGET_K;
+        settings.target_k;
 
     controller_state.enabled =
-        true;
+        settings.thermal_enabled;
 
-    heater_set_all_power(0.0f);
+    // Always start physically with the heaters off.
+    // Stored manual values are restored only after
+    // the sensor and safety checks have passed.
+    heater_all_off();
 }
 
 
@@ -106,7 +140,6 @@ void thermal_control_update()
     const TempSensor sensor =
         get_control_sensor();
 
-
     // ------------------------------------------------------------------------
     // Sensor validation
     // ------------------------------------------------------------------------
@@ -117,15 +150,12 @@ void thermal_control_update()
         // Heater operation is not allowed without a valid
         // control temperature.
         heater_all_off();
-
         if (controller_state.enabled)
         {
             reset_controller();
         }
-
         return;
     }
-
 
     const float temperature_k =
         max31865_get_temperature(sensor);
@@ -140,15 +170,12 @@ void thermal_control_update()
         // Safety shutdown applies to both automatic
         // and manual heater operation.
         heater_all_off();
-
         if (controller_state.enabled)
         {
             reset_controller();
         }
-
         return;
     }
-
 
     // ------------------------------------------------------------------------
     // Manual heater mode
@@ -160,23 +187,26 @@ void thermal_control_update()
 
     if (!controller_state.enabled)
     {
+        for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+        {
+            heater_set_power(
+                static_cast<Heater>(i),
+                settings.heater_power[i]
+            );
+        }
         return;
     }
-
 
     // ------------------------------------------------------------------------
     // PID controller
     // ------------------------------------------------------------------------
 
-
     const uint32_t current_time_ms =
         millis();
 
-
     const float error =
-       controller_state.target_k -
-       temperature_k;
-
+        controller_state.target_k -
+        temperature_k;
 
     // ------------------------------------------------------------------------
     // First controller update
@@ -248,10 +278,10 @@ void thermal_control_update()
     //
 
     const float temperature_rate =
-        (
-            temperature_k -
-            controller_state.previous_temperature_k
-        ) / dt;
+    (
+        temperature_k -
+        controller_state.previous_temperature_k
+    ) / dt;
 
 
     const float d_term =
@@ -273,7 +303,7 @@ void thermal_control_update()
         constrain(
             integral_candidate,
             -THERMAL_MAX_OUTPUT_PERCENT,
-             THERMAL_MAX_OUTPUT_PERCENT
+            THERMAL_MAX_OUTPUT_PERCENT
         );
 
 
@@ -301,9 +331,9 @@ void thermal_control_update()
     // Integration in the opposite direction remains possible so that
     // the controller can leave saturation again.
     if (!(
-            (saturated_high && error > 0.0f) ||
-            (saturated_low  && error < 0.0f)
-        ))
+        (saturated_high && error > 0.0f) ||
+        (saturated_low && error < 0.0f)
+    ))
     {
         controller_state.integral =
             integral_candidate;
@@ -392,15 +422,40 @@ bool thermal_control_set_target(float target_k)
         return false;
     }
 
-    controller_state.target_k = target_k;
+    controller_state.target_k =
+        target_k;
+
+    settings.target_k =
+        target_k;
+
+    save_settings();
 
     return true;
 }
 
 void thermal_control_set_enabled(bool enabled)
 {
+    // Nothing to change.
+    if (controller_state.enabled == enabled)
+    {
+        return;
+    }
+
     controller_state.enabled =
         enabled;
+
+    settings.thermal_enabled =
+        enabled;
+
+
+    // Switching operating mode starts with zero
+    // manual heater power.
+    for (float& power : settings.heater_power)
+    {
+        power = 0.0f;
+    }
+
+    save_settings();
 
     reset_controller();
 }
@@ -409,4 +464,17 @@ void thermal_control_set_enabled(bool enabled)
 bool thermal_control_is_enabled()
 {
     return controller_state.enabled;
+}
+
+void thermal_control_save_heater_state()
+{
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+    {
+        settings.heater_power[i] =
+            heater_get_power(
+                static_cast<Heater>(i)
+            );
+    }
+
+    save_settings();
 }

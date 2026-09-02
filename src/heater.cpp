@@ -14,90 +14,88 @@
 
 namespace
 {
+    // ============================================================================
+    // Channel configuration
+    // ============================================================================
 
-// ============================================================================
-// Channel configuration
-// ============================================================================
-
-constexpr bool channel_enabled[] =
-{
-    HEATER_1_ENABLED,
-    HEATER_2_ENABLED,
-    HEATER_3_ENABLED,
-    HEATER_4_ENABLED
-};
-
-
-constexpr uint8_t heater_pins[] =
-{
-    HEATER_PIN_1,
-    HEATER_PIN_2,
-    HEATER_PIN_3,
-    HEATER_PIN_4
-};
+    constexpr bool channel_enabled[] =
+    {
+        HEATER_1_ENABLED,
+        HEATER_2_ENABLED,
+        HEATER_3_ENABLED,
+        HEATER_4_ENABLED
+    };
 
 
-constexpr float max_power_percent[] =
-{
-    HEATER_1_MAX_POWER_PERCENT,
-    HEATER_2_MAX_POWER_PERCENT,
-    HEATER_3_MAX_POWER_PERCENT,
-    HEATER_4_MAX_POWER_PERCENT
-};
+    constexpr uint8_t heater_pins[] =
+    {
+        HEATER_PIN_1,
+        HEATER_PIN_2,
+        HEATER_PIN_3,
+        HEATER_PIN_4
+    };
 
 
-static_assert(
-    sizeof(channel_enabled) / sizeof(channel_enabled[0]) ==
-    HEATER_CHANNEL_COUNT
-);
-
-static_assert(
-    sizeof(heater_pins) / sizeof(heater_pins[0]) ==
-    HEATER_CHANNEL_COUNT
-);
-
-static_assert(
-    sizeof(max_power_percent) / sizeof(max_power_percent[0]) ==
-    HEATER_CHANNEL_COUNT
-);
+    constexpr float max_power_percent[] =
+    {
+        HEATER_1_MAX_POWER_PERCENT,
+        HEATER_2_MAX_POWER_PERCENT,
+        HEATER_3_MAX_POWER_PERCENT,
+        HEATER_4_MAX_POWER_PERCENT
+    };
 
 
-// ============================================================================
-// Runtime state
-// ============================================================================
-
-float current_power_percent[HEATER_CHANNEL_COUNT] = {};
-
-
-// ============================================================================
-// Helper functions
-// ============================================================================
-
-bool index_valid(uint8_t index)
-{
-    return index < HEATER_CHANNEL_COUNT;
-}
-
-
-void write_power(
-    uint8_t index,
-    float power_percent
-)
-{
-    // Arduino analogWrite uses the default 8-bit range 0...255.
-    const uint8_t pwm_value =
-        static_cast<uint8_t>(
-            power_percent * 255.0f / 100.0f + 0.5f
-        );
-
-    analogWrite(
-        heater_pins[index],
-        pwm_value
+    static_assert(
+        sizeof(channel_enabled) / sizeof(channel_enabled[0]) ==
+        HEATER_CHANNEL_COUNT
     );
 
-    current_power_percent[index] = power_percent;
-}
+    static_assert(
+        sizeof(heater_pins) / sizeof(heater_pins[0]) ==
+        HEATER_CHANNEL_COUNT
+    );
 
+    static_assert(
+        sizeof(max_power_percent) / sizeof(max_power_percent[0]) ==
+        HEATER_CHANNEL_COUNT
+    );
+
+
+    // ============================================================================
+    // Runtime state
+    // ============================================================================
+
+    float current_power_percent[HEATER_CHANNEL_COUNT] = {};
+
+
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
+
+    bool index_valid(uint8_t index)
+    {
+        return index < HEATER_CHANNEL_COUNT;
+    }
+
+
+    void write_power(
+        uint8_t index,
+        float power_percent
+    )
+    {
+        // Arduino analogWrite uses the default 8-bit range 0...255.
+        const uint8_t pwm_value =
+            static_cast<uint8_t>(
+                power_percent * 255.0f / 100.0f + 0.5f
+            );
+
+        analogWrite(
+            heater_pins[index],
+            pwm_value
+        );
+
+        current_power_percent[index] = power_percent;
+    }
 } // namespace
 
 
@@ -221,5 +219,5 @@ bool heater_is_enabled(Heater heater)
         static_cast<uint8_t>(heater);
 
     return index_valid(index) &&
-           channel_enabled[index];
+        channel_enabled[index];
 }

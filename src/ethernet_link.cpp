@@ -16,53 +16,51 @@
 
 namespace
 {
+    // ============================================================================
+    // TCP server
+    // ============================================================================
 
-// ============================================================================
-// TCP server
-// ============================================================================
-
-EthernetServer server(ETHERNET_TCP_PORT);
-EthernetClient client;
-
-
-// ============================================================================
-// Receive buffer
-// ============================================================================
-
-char receive_buffer[ETHERNET_RX_BUFFER_SIZE];
-
-size_t receive_length = 0;
-bool line_ready = false;
+    EthernetServer server(ETHERNET_TCP_PORT);
+    EthernetClient client;
 
 
-// ============================================================================
-// Helper functions
-// ============================================================================
+    // ============================================================================
+    // Receive buffer
+    // ============================================================================
 
-void reset_receive_buffer()
-{
-    receive_length = 0;
-    line_ready = false;
-}
+    char receive_buffer[ETHERNET_RX_BUFFER_SIZE];
+
+    size_t receive_length = 0;
+    bool line_ready = false;
 
 
-void get_teensy_mac(uint8_t* mac)
-{
-    // Teensy 4.1 stores its unique factory MAC address
-    // in the IMXRT1062 OCOTP fuse registers.
-    for (uint8_t i = 0; i < 2; ++i)
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
+
+    void reset_receive_buffer()
     {
-        mac[i] =
-            (HW_OCOTP_MAC1 >> ((1 - i) * 8)) & 0xFF;
+        receive_length = 0;
+        line_ready = false;
     }
 
-    for (uint8_t i = 0; i < 4; ++i)
-    {
-        mac[i + 2] =
-            (HW_OCOTP_MAC0 >> ((3 - i) * 8)) & 0xFF;
-    }
-}
 
+    void get_teensy_mac(uint8_t* mac)
+    {
+        // Teensy 4.1 stores its unique factory MAC address
+        // in the IMXRT1062 OCOTP fuse registers.
+        for (uint8_t i = 0; i < 2; ++i)
+        {
+            mac[i] =
+                (HW_OCOTP_MAC1 >> ((1 - i) * 8)) & 0xFF;
+        }
+
+        for (uint8_t i = 0; i < 4; ++i)
+        {
+            mac[i + 2] =
+                (HW_OCOTP_MAC0 >> ((3 - i) * 8)) & 0xFF;
+        }
+    }
 } // namespace
 
 
@@ -219,7 +217,7 @@ void ethernet_link_update()
 bool ethernet_link_connected()
 {
     return client &&
-           client.connected();
+        client.connected();
 }
 
 

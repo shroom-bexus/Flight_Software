@@ -17,63 +17,61 @@
 
 namespace
 {
+    // ============================================================================
+    // Sensor configuration
+    // ============================================================================
 
-// ============================================================================
-// Sensor configuration
-// ============================================================================
+    // Command for a high-precision single-shot measurement.
+    constexpr uint8_t HIDS_MEASURE_CMD = 0xFD;
 
-// Command for a high-precision single-shot measurement.
-constexpr uint8_t HIDS_MEASURE_CMD = 0xFD;
-
-// Measurement response:
-// Temperature MSB + LSB + CRC
-// Humidity    MSB + LSB + CRC
-constexpr uint8_t HIDS_DATA_LENGTH = 6;
-
-
-// ============================================================================
-// Stored measurement data
-// ============================================================================
-
-float temperature_k = NAN;
-float humidity_percent = NAN;
-
-bool initialized = false;
-bool last_measurement_valid = false;
-uint32_t error_count = 0;
+    // Measurement response:
+    // Temperature MSB + LSB + CRC
+    // Humidity    MSB + LSB + CRC
+    constexpr uint8_t HIDS_DATA_LENGTH = 6;
 
 
-// ============================================================================
-// CRC
-// ============================================================================
+    // ============================================================================
+    // Stored measurement data
+    // ============================================================================
 
-/**
+    float temperature_k = NAN;
+    float humidity_percent = NAN;
+
+    bool initialized = false;
+    bool last_measurement_valid = false;
+    uint32_t error_count = 0;
+
+
+    // ============================================================================
+    // CRC
+    // ============================================================================
+
+    /**
  * @brief Calculate the CRC used by the WSEN-HIDS measurement data.
  */
-uint8_t calculate_crc(const uint8_t* data, size_t length)
-{
-    uint8_t crc = 0xFF;
-
-    for (size_t i = 0; i < length; ++i)
+    uint8_t calculate_crc(const uint8_t* data, size_t length)
     {
-        crc ^= data[i];
+        uint8_t crc = 0xFF;
 
-        for (uint8_t bit = 0; bit < 8; ++bit)
+        for (size_t i = 0; i < length; ++i)
         {
-            if (crc & 0x80)
+            crc ^= data[i];
+
+            for (uint8_t bit = 0; bit < 8; ++bit)
             {
-                crc = (crc << 1) ^ 0x31;
-            }
-            else
-            {
-                crc <<= 1;
+                if (crc & 0x80)
+                {
+                    crc = (crc << 1) ^ 0x31;
+                }
+                else
+                {
+                    crc <<= 1;
+                }
             }
         }
+
+        return crc;
     }
-
-    return crc;
-}
-
 } // namespace
 
 
@@ -130,14 +128,14 @@ bool wsen_hids_update()
     uint8_t data[HIDS_DATA_LENGTH];
 
     if (Wire.requestFrom(
-            WSEN_HIDS_I2C_ADDRESS,
-            HIDS_DATA_LENGTH) != HIDS_DATA_LENGTH)
+        WSEN_HIDS_I2C_ADDRESS,
+        HIDS_DATA_LENGTH) != HIDS_DATA_LENGTH)
     {
         ++error_count;
         return false;
     }
 
-    for (uint8_t &byte : data)
+    for (uint8_t& byte : data)
     {
         byte = Wire.read();
     }

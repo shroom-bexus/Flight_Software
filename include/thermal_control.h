@@ -84,4 +84,9 @@ void thermal_control_set_enabled(bool enabled);
  */
 bool thermal_control_is_enabled();
 
+/**
+ * @brief Store the current manual heater outputs.
+ */
+void thermal_control_save_heater_state();
+
 #endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H

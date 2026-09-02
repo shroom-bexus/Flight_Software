@@ -26,41 +26,40 @@
 
 
 #if ENABLE_MAX31865
-    #include "max31865.h"
+#include "max31865.h"
 #endif
 
 #if ENABLE_WSEN_PADS
-    #include "wsen_pads.h"
+#include "wsen_pads.h"
 #endif
 
 #if ENABLE_WSEN_HIDS
-    #include "wsen_hids.h"
+#include "wsen_hids.h"
 #endif
 
 #if ENABLE_AIRDOS
-    #include "airdos.h"
+#include "airdos.h"
 #endif
 
 #if ENABLE_ETHERNET
-    #include "ethernet_link.h"
-    #include "commands.h"
+#include "ethernet_link.h"
+#include "commands.h"
 #endif
 
 #if ENABLE_HEATERS
-    #include "heater.h"
+#include "heater.h"
 #endif
 
 #if ENABLE_THERMAL_CONTROL
-    #include "thermal_control.h"
+#include "thermal_control.h"
 #endif
 
 
 namespace
 {
-
-// ============================================================================
-// Sensor timers
-// ============================================================================
+    // ============================================================================
+    // Sensor timers
+    // ============================================================================
 
 #if ENABLE_MAX31865
     elapsedMillis max31865_timer;
@@ -81,35 +80,34 @@ namespace
 #endif
 
 
-// ============================================================================
-// Ethernet state
-// ============================================================================
+    // ============================================================================
+    // Ethernet state
+    // ============================================================================
 
 #if ENABLE_ETHERNET
 
-bool ethernet_ready = false;
+    bool ethernet_ready = false;
 
-char ethernet_rx_line[ETHERNET_RX_BUFFER_SIZE];
+    char ethernet_rx_line[ETHERNET_RX_BUFFER_SIZE];
 
 #endif
 
 
-// ============================================================================
-// Helper functions
-// ============================================================================
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
 
-/**
- * @brief Print the initialization result of one module.
- */
-void print_init_result(
-    const char* name,
-    bool success
-)
-{
-    Serial.print(name);
-    Serial.println(success ? ": OK" : ": FAILED");
-}
-
+    /**
+     * @brief Print the initialization result of one module.
+     */
+    void print_init_result(
+        const char* name,
+        bool success
+    )
+    {
+        Serial.print(name);
+        Serial.println(success ? ": OK" : ": FAILED");
+    }
 } // namespace
 
 
@@ -288,7 +286,6 @@ void setup()
     Serial.println();
     Serial.println("Initialization complete.");
     Serial.println();
-
 }
 
 
@@ -309,8 +306,8 @@ void loop()
         ethernet_link_update();
 
         if (ethernet_link_read_line(
-                ethernet_rx_line,
-                sizeof(ethernet_rx_line)))
+            ethernet_rx_line,
+            sizeof(ethernet_rx_line)))
         {
             commands_handle(
                 ethernet_rx_line
@@ -533,229 +530,228 @@ void loop()
 #endif
 
     // ========================================================================
-// Health telemetry
-// ========================================================================
+    // Health telemetry
+    // ========================================================================
 
 #if ENABLE_ETHERNET
 
-if (ethernet_link_connected() &&
-    health_telemetry_timer >= HEALTH_TELEMETRY_PERIOD_MS)
-{
-    health_telemetry_timer = 0;
+    if (ethernet_link_connected() &&
+        health_telemetry_timer >= HEALTH_TELEMETRY_PERIOD_MS)
+    {
+        health_telemetry_timer = 0;
 
-    char message[128];
+        char message[128];
 
-    const uint32_t time_ms = millis();
+        const uint32_t time_ms = millis();
 
 
-    // --------------------------------------------------------------------
-    // SD card
-    // --------------------------------------------------------------------
+        // --------------------------------------------------------------------
+        // SD card
+        // --------------------------------------------------------------------
 
 #if ENABLE_SD_LOGGING
 
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,SD,%s,%lu",
-        time_ms,
-        logger_is_ready() ? "OK" : "FAULT",
-        logger_get_error_count()
-    );
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,SD,%s,%lu",
+            time_ms,
+            logger_is_ready() ? "OK" : "FAULT",
+            logger_get_error_count()
+        );
 
-    ethernet_link_send_line(message);
+        ethernet_link_send_line(message);
 
 #endif
 
 
-    // --------------------------------------------------------------------
-    // MAX31865
-    // --------------------------------------------------------------------
+        // --------------------------------------------------------------------
+        // MAX31865
+        // --------------------------------------------------------------------
 
 #if ENABLE_MAX31865
 
-    for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
-    {
-        const TempSensor sensor =
-            static_cast<TempSensor>(i);
-
-        if (!max31865_is_enabled(sensor))
+        for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
         {
-            continue;
+            const TempSensor sensor =
+                static_cast<TempSensor>(i);
+
+            if (!max31865_is_enabled(sensor))
+            {
+                continue;
+            }
+
+
+            const char* state;
+
+            if (!max31865_is_initialized(sensor))
+            {
+                state = "FAULT";
+            }
+            else if (max31865_data_valid(sensor))
+            {
+                state = "OK";
+            }
+            else if (max31865_get_error_count(sensor) == 0)
+            {
+                state = "WAITING";
+            }
+            else
+            {
+                state = "FAULT";
+            }
+
+
+            snprintf(
+                message,
+                sizeof(message),
+                "HEALTH,%lu,MAX31865,%u,%s,%u,%lu",
+                time_ms,
+                i + 1,
+                state,
+                max31865_get_fault(sensor),
+                max31865_get_error_count(sensor)
+            );
+
+            ethernet_link_send_line(message);
         }
 
+#endif
 
-        const char* state;
 
-        if (!max31865_is_initialized(sensor))
+        // --------------------------------------------------------------------
+        // WSEN-PADS
+        // --------------------------------------------------------------------
+
+#if ENABLE_WSEN_PADS
+
+        const char* pads_state;
+
+        if (!wsen_pads_is_initialized())
         {
-            state = "FAULT";
+            pads_state = "FAULT";
         }
-        else if (max31865_data_valid(sensor))
+        else if (wsen_pads_data_valid())
         {
-            state = "OK";
+            pads_state = "OK";
         }
-        else if (max31865_get_error_count(sensor) == 0)
+        else if (wsen_pads_get_error_count() == 0)
         {
-            state = "WAITING";
+            pads_state = "WAITING";
         }
         else
         {
-            state = "FAULT";
+            pads_state = "FAULT";
         }
 
 
         snprintf(
             message,
             sizeof(message),
-            "HEALTH,%lu,MAX31865,%u,%s,%u,%lu",
+            "HEALTH,%lu,PADS,%s,%lu",
             time_ms,
-            i + 1,
-            state,
-            max31865_get_fault(sensor),
-            max31865_get_error_count(sensor)
+            pads_state,
+            wsen_pads_get_error_count()
         );
 
         ethernet_link_send_line(message);
-    }
 
 #endif
 
 
-    // --------------------------------------------------------------------
-    // WSEN-PADS
-    // --------------------------------------------------------------------
-
-#if ENABLE_WSEN_PADS
-
-    const char* pads_state;
-
-    if (!wsen_pads_is_initialized())
-    {
-        pads_state = "FAULT";
-    }
-    else if (wsen_pads_data_valid())
-    {
-        pads_state = "OK";
-    }
-    else if (wsen_pads_get_error_count() == 0)
-    {
-        pads_state = "WAITING";
-    }
-    else
-    {
-        pads_state = "FAULT";
-    }
-
-
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,PADS,%s,%lu",
-        time_ms,
-        pads_state,
-        wsen_pads_get_error_count()
-    );
-
-    ethernet_link_send_line(message);
-
-#endif
-
-
-    // --------------------------------------------------------------------
-    // WSEN-HIDS
-    // --------------------------------------------------------------------
+        // --------------------------------------------------------------------
+        // WSEN-HIDS
+        // --------------------------------------------------------------------
 
 #if ENABLE_WSEN_HIDS
 
-    const char* hids_state;
+        const char* hids_state;
 
-    if (!wsen_hids_is_initialized())
-    {
-        hids_state = "FAULT";
-    }
-    else if (wsen_hids_data_valid())
-    {
-        hids_state = "OK";
-    }
-    else if (wsen_hids_get_error_count() == 0)
-    {
-        hids_state = "WAITING";
-    }
-    else
-    {
-        hids_state = "FAULT";
-    }
+        if (!wsen_hids_is_initialized())
+        {
+            hids_state = "FAULT";
+        }
+        else if (wsen_hids_data_valid())
+        {
+            hids_state = "OK";
+        }
+        else if (wsen_hids_get_error_count() == 0)
+        {
+            hids_state = "WAITING";
+        }
+        else
+        {
+            hids_state = "FAULT";
+        }
 
 
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,HIDS,%s,%lu",
-        time_ms,
-        hids_state,
-        wsen_hids_get_error_count()
-    );
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,HIDS,%s,%lu",
+            time_ms,
+            hids_state,
+            wsen_hids_get_error_count()
+        );
 
-    ethernet_link_send_line(message);
+        ethernet_link_send_line(message);
 
 #endif
 
 
-    // --------------------------------------------------------------------
-    // AIRDOS
-    // --------------------------------------------------------------------
+        // --------------------------------------------------------------------
+        // AIRDOS
+        // --------------------------------------------------------------------
 
 #if ENABLE_AIRDOS
 
-    const char* airdos_state;
-    uint32_t last_message_age = 0;
+        const char* airdos_state;
+        uint32_t last_message_age = 0;
 
-    if (!airdos_has_received_data())
-    {
-        if (time_ms > AIRDOS_TIMEOUT_MS)
+        if (!airdos_has_received_data())
         {
-            airdos_state = "FAULT";
+            if (time_ms > AIRDOS_TIMEOUT_MS)
+            {
+                airdos_state = "FAULT";
+            }
+            else
+            {
+                airdos_state = "WAITING";
+            }
         }
         else
         {
-            airdos_state = "WAITING";
-        }
-    }
-    else
-    {
-        last_message_age =
-            time_ms - airdos_get_last_message_ms();
+            last_message_age =
+                time_ms - airdos_get_last_message_ms();
 
-        if (last_message_age > AIRDOS_TIMEOUT_MS)
-        {
-            airdos_state = "FAULT";
+            if (last_message_age > AIRDOS_TIMEOUT_MS)
+            {
+                airdos_state = "FAULT";
+            }
+            else
+            {
+                airdos_state = "OK";
+            }
         }
-        else
-        {
-            airdos_state = "OK";
-        }
-    }
 
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,AIRDOS,%s,%lu,%lu",
-        time_ms,
-        airdos_state,
-        last_message_age,
-        airdos_get_overflow_count()
-    );
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,AIRDOS,%s,%lu,%lu",
+            time_ms,
+            airdos_state,
+            last_message_age,
+            airdos_get_overflow_count()
+        );
 
-    ethernet_link_send_line(
-        message
-    );
+        ethernet_link_send_line(
+            message
+        );
 
 #endif
-}
+    }
 
 #endif
-
 }
 
 

@@ -354,7 +354,4 @@ constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
 constexpr uint32_t HEALTH_TELEMETRY_PERIOD_MS = 5000;
 
 
-
-
-
 #endif // FLIGHT_SOFTWARE_CONFIG_H

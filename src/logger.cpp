@@ -19,106 +19,104 @@
 
 namespace
 {
-
 #if ENABLE_SD_LOGGING
 
-// ============================================================================
-// Log files
-// ============================================================================
+    // ============================================================================
+    // Log files
+    // ============================================================================
 
 #if ENABLE_MAX31865 && LOG_MAX31865
-File max31865_file;
+    File max31865_file;
 #endif
 
 #if ENABLE_WSEN_PADS && LOG_WSEN_PADS
-File wsen_pads_file;
+    File wsen_pads_file;
 #endif
 
 #if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
-File wsen_hids_file;
+    File wsen_hids_file;
 #endif
 
 #if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
-File wsen_isds_file;
+    File wsen_isds_file;
 #endif
 
 #if ENABLE_AIRDOS && LOG_AIRDOS
-File airdos_file;
+    File airdos_file;
 #endif
 
 
-uint32_t last_flush_time = 0;
+    uint32_t last_flush_time = 0;
 
-bool logger_ready = false;
-uint32_t logger_error_count = 0;
+    bool logger_ready = false;
+    uint32_t logger_error_count = 0;
 
 
-// ============================================================================
-// Helper functions
-// ============================================================================
+    // ============================================================================
+    // Helper functions
+    // ============================================================================
 
-/**
+    /**
  * @brief Open a log file and add the CSV header if the file is empty.
  */
-bool open_log_file(
-    File& file,
-    const char* filename,
-    const char* header
-)
-{
-    file = SD.open(filename, FILE_WRITE);
-
-    if (!file)
+    bool open_log_file(
+        File& file,
+        const char* filename,
+        const char* header
+    )
     {
-        return false;
+        file = SD.open(filename, FILE_WRITE);
+
+        if (!file)
+        {
+            return false;
+        }
+
+        // Only write the header when creating a new file.
+        if (file.size() == 0)
+        {
+            file.println(header);
+            file.flush();
+        }
+
+        return true;
     }
 
-    // Only write the header when creating a new file.
-    if (file.size() == 0)
-    {
-        file.println(header);
-        file.flush();
-    }
 
-    return true;
-}
-
-
-/**
+    /**
  * @brief Write the timestamp prefix shared by all log entries.
  *
  * Format:
  * UTC timestamp,milliseconds since boot,
  */
-void write_timestamp(File& file)
-{
-    char timestamp[24];
+    void write_timestamp(File& file)
+    {
+        char timestamp[24];
 
-    rtc_get_timestamp(
-        timestamp,
-        sizeof(timestamp)
-    );
+        rtc_get_timestamp(
+            timestamp,
+            sizeof(timestamp)
+        );
 
-    file.print(timestamp);
-    file.print(',');
-    file.print(millis());
-    file.print(',');
-}
+        file.print(timestamp);
+        file.print(',');
+        file.print(millis());
+        file.print(',');
+    }
 
 
-/**
+    /**
  * @brief Flush a file if it is currently open.
  */
-void flush_file(File& file)
-{
-    if (file)
+    void flush_file(File& file)
     {
-        file.flush();
+        if (file)
+        {
+            file.flush();
+        }
     }
-}
 
 #endif // ENABLE_SD_LOGGING
-
 } // namespace
 
 
@@ -149,9 +147,9 @@ bool logger_init()
 #if ENABLE_MAX31865 && LOG_MAX31865
 
     if (!open_log_file(
-            max31865_file,
-            "max31865.csv",
-            "timestamp,time_ms,sensor,temperature_K"))
+        max31865_file,
+        "max31865.csv",
+        "timestamp,time_ms,sensor,temperature_K"))
     {
         ++logger_error_count;
         success = false;
@@ -163,9 +161,9 @@ bool logger_init()
 #if ENABLE_WSEN_PADS && LOG_WSEN_PADS
 
     if (!open_log_file(
-            wsen_pads_file,
-            "wsen_pads.csv",
-            "timestamp,time_ms,temperature_K,pressure_Pa"))
+        wsen_pads_file,
+        "wsen_pads.csv",
+        "timestamp,time_ms,temperature_K,pressure_Pa"))
     {
         ++logger_error_count;
         success = false;
@@ -177,9 +175,9 @@ bool logger_init()
 #if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
 
     if (!open_log_file(
-            wsen_hids_file,
-            "wsen_hids.csv",
-            "timestamp,time_ms,temperature_K,humidity_percent"))
+        wsen_hids_file,
+        "wsen_hids.csv",
+        "timestamp,time_ms,temperature_K,humidity_percent"))
     {
         ++logger_error_count;
         success = false;
@@ -191,9 +189,9 @@ bool logger_init()
 #if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
 
     if (!open_log_file(
-            wsen_isds_file,
-            "wsen_isds.csv",
-            "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"))
+        wsen_isds_file,
+        "wsen_isds.csv",
+        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"))
     {
         ++logger_error_count;
         success = false;
@@ -205,9 +203,9 @@ bool logger_init()
 #if ENABLE_AIRDOS && LOG_AIRDOS
 
     if (!open_log_file(
-            airdos_file,
-            "airdos.csv",
-            "timestamp,time_ms,sensor,data"))
+        airdos_file,
+        "airdos.csv",
+        "timestamp,time_ms,sensor,data"))
     {
         ++logger_error_count;
         success = false;
