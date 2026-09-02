@@ -79,6 +79,17 @@ void telemetry_send_thermal()
     snprintf(
         message,
         sizeof(message),
+        "PID,%lu,%.6g,%.6g,%.6g",
+        static_cast<unsigned long>(time_ms),
+        thermal_control_get_kp(),
+        thermal_control_get_ki(),
+        thermal_control_get_kd()
+    );
+    ethernet_link_send_line(message);
+
+    snprintf(
+        message,
+        sizeof(message),
         "HEATERS,%lu,%.1f,%.1f,%.1f,%.1f",
         static_cast<unsigned long>(time_ms),
         heater_get_power(Heater::HEATER_1),

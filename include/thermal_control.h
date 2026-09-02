@@ -48,6 +48,21 @@ float thermal_control_get_target();
 float thermal_control_get_temperature();
 
 /**
+ * @brief Return the configured proportional gain.
+ */
+float thermal_control_get_kp();
+
+/**
+ * @brief Return the configured integral gain.
+ */
+float thermal_control_get_ki();
+
+/**
+ * @brief Return the configured derivative gain.
+ */
+float thermal_control_get_kd();
+
+/**
  * @brief Change the thermal control target.
  *
  * @param target_k New target temperature in Kelvin.
@@ -55,6 +70,15 @@ float thermal_control_get_temperature();
  * @return true if the target was accepted.
  */
 bool thermal_control_set_target(float target_k);
+
+/**
+ * @brief Change and store all PID gains.
+ *
+ * The new gains take effect immediately and remain available after a reset.
+ *
+ * @return true if all gains were accepted.
+ */
+bool thermal_control_set_pid(float kp, float ki, float kd);
 
 /**
  * @brief Enable or disable the thermal controller.

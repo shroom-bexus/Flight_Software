@@ -105,9 +105,10 @@ constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
 // Thermal control
 constexpr TempSensor THERMAL_CONTROL_SENSOR = TempSensor::TEMP_1;
 constexpr float THERMAL_TARGET_K = 298.15f;
-constexpr float THERMAL_KP = 0.0f; // % / K
-constexpr float THERMAL_KI = 0.0f; // % / (K s)
-constexpr float THERMAL_KD = 0.0f; // % s / K
+constexpr float THERMAL_DEFAULT_KP = 0.0f; // % / K
+constexpr float THERMAL_DEFAULT_KI = 0.0f; // % / (K s)
+constexpr float THERMAL_DEFAULT_KD = 0.0f; // % s / K
+constexpr float THERMAL_MAX_PID_GAIN = 1000.0f;
 constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
 

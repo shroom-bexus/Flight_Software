@@ -18,6 +18,13 @@ namespace
 {
 using CommandHandler = void (*)(const char* args);
 
+enum class PidGain
+{
+    KP,
+    KI,
+    KD
+};
+
 // The table maps the received command name to its handler function.
 struct CommandEntry
 {
@@ -46,6 +53,22 @@ bool parse_float(const char* text, float& value)
     char* end = nullptr;
     value = strtof(text, &end);
     return text != end && *end == '\0';
+}
+
+bool parse_pid_values(const char* text, float& kp, float& ki, float& kd)
+{
+    char* end = nullptr;
+
+    kp = strtof(text, &end);
+    if (text == end || *end != ',') return false;
+
+    const char* ki_text = end + 1;
+    ki = strtof(ki_text, &end);
+    if (ki_text == end || *end != ',') return false;
+
+    const char* kd_text = end + 1;
+    kd = strtof(kd_text, &end);
+    return kd_text != end && *end == '\0';
 }
 
 void handle_ping(const char*)
@@ -82,6 +105,70 @@ void handle_thermal_off(const char*)
 {
     thermal_control_set_enabled(false);
     send_reply("ACK", "THERMAL_OFF");
+}
+
+void handle_set_pid(const char* args)
+{
+    float kp;
+    float ki;
+    float kd;
+    if (!parse_pid_values(args, kp, ki, kd))
+    {
+        send_reply("NACK", "SET_PID", "INVALID_VALUE");
+        return;
+    }
+    if (!thermal_control_set_pid(kp, ki, kd))
+    {
+        send_reply("NACK", "SET_PID", "OUT_OF_RANGE");
+        return;
+    }
+
+    char detail[48];
+    snprintf(detail, sizeof(detail), "%.6g,%.6g,%.6g", kp, ki, kd);
+    send_reply("ACK", "SET_PID", detail);
+}
+
+void handle_set_gain(const char* args, PidGain gain, const char* command)
+{
+    float value;
+    if (!parse_float(args, value))
+    {
+        send_reply("NACK", command, "INVALID_VALUE");
+        return;
+    }
+
+    float kp = thermal_control_get_kp();
+    float ki = thermal_control_get_ki();
+    float kd = thermal_control_get_kd();
+
+    if (gain == PidGain::KP) kp = value;
+    if (gain == PidGain::KI) ki = value;
+    if (gain == PidGain::KD) kd = value;
+
+    if (!thermal_control_set_pid(kp, ki, kd))
+    {
+        send_reply("NACK", command, "OUT_OF_RANGE");
+        return;
+    }
+
+    char detail[16];
+    snprintf(detail, sizeof(detail), "%.6g", value);
+    send_reply("ACK", command, detail);
+}
+
+void handle_set_kp(const char* args)
+{
+    handle_set_gain(args, PidGain::KP, "SET_KP");
+}
+
+void handle_set_ki(const char* args)
+{
+    handle_set_gain(args, PidGain::KI, "SET_KI");
+}
+
+void handle_set_kd(const char* args)
+{
+    handle_set_gain(args, PidGain::KD, "SET_KD");
 }
 
 void handle_set_heater(const char* args)
@@ -165,6 +252,10 @@ const CommandEntry command_table[] =
     {"SET_TARGET", handle_set_target},
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
+    {"SET_PID", handle_set_pid},
+    {"SET_KP", handle_set_kp},
+    {"SET_KI", handle_set_ki},
+    {"SET_KD", handle_set_kd},
     {"SET_HEATER", handle_set_heater}
 };
 } // namespace

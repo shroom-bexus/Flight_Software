@@ -27,6 +27,7 @@ struct ControllerState
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
+constexpr uint32_t SETTINGS_VERSION = 2;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -35,6 +36,11 @@ struct PersistentSettings
     bool thermal_enabled;
     float target_k;
     float heater_power[HEATER_CHANNEL_COUNT];
+    // Version follows the old layout so existing settings can be migrated.
+    uint32_t version;
+    float kp;
+    float ki;
+    float kd;
 };
 
 ControllerState controller;
@@ -45,17 +51,50 @@ void save_settings()
     EEPROM.put(0, settings);
 }
 
+bool pid_values_valid(float kp, float ki, float kd)
+{
+    return std::isfinite(kp) && std::isfinite(ki) && std::isfinite(kd) &&
+        kp >= 0.0f && ki >= 0.0f && kd >= 0.0f &&
+        kp <= THERMAL_MAX_PID_GAIN &&
+        ki <= THERMAL_MAX_PID_GAIN &&
+        kd <= THERMAL_MAX_PID_GAIN;
+}
+
+void set_pid_defaults()
+{
+    settings.kp = THERMAL_DEFAULT_KP;
+    settings.ki = THERMAL_DEFAULT_KI;
+    settings.kd = THERMAL_DEFAULT_KD;
+}
+
 void load_settings()
 {
     EEPROM.get(0, settings);
-    if (settings.magic == SETTINGS_MAGIC) return;
+    if (settings.magic != SETTINGS_MAGIC)
+    {
+        // First start: initialize EEPROM with safe defaults.
+        settings = {};
+        settings.magic = SETTINGS_MAGIC;
+        settings.thermal_enabled = true;
+        settings.target_k = THERMAL_TARGET_K;
+        settings.version = SETTINGS_VERSION;
+        set_pid_defaults();
+        save_settings();
+        return;
+    }
 
-    // First start: initialize EEPROM with safe defaults.
-    settings = {};
-    settings.magic = SETTINGS_MAGIC;
-    settings.thermal_enabled = true;
-    settings.target_k = THERMAL_TARGET_K;
-    save_settings();
+    bool settings_changed = false;
+
+    // Older settings did not contain PID gains. Preserve their other values.
+    if (settings.version != SETTINGS_VERSION ||
+        !pid_values_valid(settings.kp, settings.ki, settings.kd))
+    {
+        settings.version = SETTINGS_VERSION;
+        set_pid_defaults();
+        settings_changed = true;
+    }
+
+    if (settings_changed) save_settings();
 }
 
 void reset_pid()
@@ -128,7 +167,7 @@ void thermal_control_update()
         controller.previous_temperature_k = temperature_k;
         controller.previous_time_ms = current_time_ms;
         controller.initialized = true;
-        apply_output(THERMAL_KP * error);
+        apply_output(settings.kp * error);
         return;
     }
 
@@ -138,15 +177,15 @@ void thermal_control_update()
     ) / 1000.0f;
     if (dt <= 0.0f) return;
 
-    const float p_term = THERMAL_KP * error;
+    const float p_term = settings.kp * error;
 
     // Derivative on the measurement avoids a kick after target changes.
     const float temperature_rate =
         (temperature_k - controller.previous_temperature_k) / dt;
-    const float d_term = -THERMAL_KD * temperature_rate;
+    const float d_term = -settings.kd * temperature_rate;
 
     float integral_candidate = constrain(
-        controller.integral + THERMAL_KI * error * dt,
+        controller.integral + settings.ki * error * dt,
         -THERMAL_MAX_OUTPUT_PERCENT,
         THERMAL_MAX_OUTPUT_PERCENT
     );
@@ -183,6 +222,21 @@ float thermal_control_get_temperature()
     return max31865_get_temperature(sensor);
 }
 
+float thermal_control_get_kp()
+{
+    return settings.kp;
+}
+
+float thermal_control_get_ki()
+{
+    return settings.ki;
+}
+
+float thermal_control_get_kd()
+{
+    return settings.kd;
+}
+
 bool thermal_control_set_target(float target_k)
 {
     if (!std::isfinite(target_k) || target_k <= 0.0f ||
@@ -194,6 +248,20 @@ bool thermal_control_set_target(float target_k)
     controller.target_k = target_k;
     settings.target_k = target_k;
     save_settings();
+    return true;
+}
+
+bool thermal_control_set_pid(float kp, float ki, float kd)
+{
+    if (!pid_values_valid(kp, ki, kd)) return false;
+
+    settings.kp = kp;
+    settings.ki = ki;
+    settings.kd = kd;
+    save_settings();
+
+    // Discard the history calculated with the previous gains.
+    if (controller.enabled) reset_pid();
     return true;
 }
 
