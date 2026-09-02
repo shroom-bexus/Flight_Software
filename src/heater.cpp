@@ -1,11 +1,4 @@
-// ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
-// ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
-// ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
-// ╚════██║██╔══██║██╔══██╗██║   ██║██║   ██║██║╚██╔╝██║
-// ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
-// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-//
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
+// SHROOM Flight Software
 
 #include "heater.h"
 
@@ -14,63 +7,13 @@
 
 namespace
 {
-    // ============================================================================
-    // Channel configuration
-    // ============================================================================
-
-    constexpr bool channel_enabled[] =
-    {
-        HEATER_1_ENABLED,
-        HEATER_2_ENABLED,
-        HEATER_3_ENABLED,
-        HEATER_4_ENABLED
-    };
-
-
-    constexpr uint8_t heater_pins[] =
-    {
-        HEATER_PIN_1,
-        HEATER_PIN_2,
-        HEATER_PIN_3,
-        HEATER_PIN_4
-    };
-
-
-    constexpr float max_power_percent[] =
-    {
-        HEATER_1_MAX_POWER_PERCENT,
-        HEATER_2_MAX_POWER_PERCENT,
-        HEATER_3_MAX_POWER_PERCENT,
-        HEATER_4_MAX_POWER_PERCENT
-    };
-
-
-    static_assert(
-        sizeof(channel_enabled) / sizeof(channel_enabled[0]) ==
-        HEATER_CHANNEL_COUNT
-    );
-
-    static_assert(
-        sizeof(heater_pins) / sizeof(heater_pins[0]) ==
-        HEATER_CHANNEL_COUNT
-    );
-
-    static_assert(
-        sizeof(max_power_percent) / sizeof(max_power_percent[0]) ==
-        HEATER_CHANNEL_COUNT
-    );
-
-
-    // ============================================================================
     // Runtime state
-    // ============================================================================
 
+    // Store the effective output after channel limits have been applied.
     float current_power_percent[HEATER_CHANNEL_COUNT] = {};
 
 
-    // ============================================================================
     // Helper functions
-    // ============================================================================
 
     bool index_valid(uint8_t index)
     {
@@ -90,7 +33,7 @@ namespace
             );
 
         analogWrite(
-            heater_pins[index],
+            HEATER_PINS[index],
             pwm_value
         );
 
@@ -99,9 +42,7 @@ namespace
 } // namespace
 
 
-// ============================================================================
 // Initialization
-// ============================================================================
 
 void heater_init()
 {
@@ -111,27 +52,25 @@ void heater_init()
 
         // Configure the PWM frequency for every heater output.
         analogWriteFrequency(
-            heater_pins[i],
+            HEATER_PINS[i],
             HEATER_PWM_FREQUENCY_HZ
         );
 
         // Heater outputs must always start in the safe OFF state.
         pinMode(
-            heater_pins[i],
+            HEATER_PINS[i],
             OUTPUT
         );
 
         digitalWrite(
-            heater_pins[i],
+            HEATER_PINS[i],
             LOW
         );
     }
 }
 
 
-// ============================================================================
 // Heater control
-// ============================================================================
 
 void heater_set_power(
     Heater heater,
@@ -142,16 +81,17 @@ void heater_set_power(
         static_cast<uint8_t>(heater);
 
     if (!index_valid(index) ||
-        !channel_enabled[index])
+        !HEATER_ENABLED[index])
     {
         return;
     }
 
 
+    // Enforce both the physical 0...100 % range and the channel limit.
     power_percent = constrain(
         power_percent,
         0.0f,
-        max_power_percent[index]
+        HEATER_MAX_POWER_PERCENT[index]
     );
 
     write_power(
@@ -175,7 +115,7 @@ void heater_all_off()
     for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
     {
         digitalWrite(
-            heater_pins[i],
+            HEATER_PINS[i],
             LOW
         );
 
@@ -195,9 +135,7 @@ void heater_set_all_power(float power_percent)
 }
 
 
-// ============================================================================
 // Getter functions
-// ============================================================================
 
 float heater_get_power(Heater heater)
 {
@@ -219,5 +157,5 @@ bool heater_is_enabled(Heater heater)
         static_cast<uint8_t>(heater);
 
     return index_valid(index) &&
-        channel_enabled[index];
+        HEATER_ENABLED[index];
 }

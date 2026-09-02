@@ -1,11 +1,4 @@
-// ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
-// ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
-// ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
-// ╚════██║██╔══██║██╔══██╗██║   ██║██║   ██║██║╚██╔╝██║
-// ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
-// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-//
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
+// SHROOM Flight Software
 
 #ifndef FLIGHT_SOFTWARE_LOGGER_H
 #define FLIGHT_SOFTWARE_LOGGER_H

@@ -1,11 +1,4 @@
-// ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
-// ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
-// ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
-// ╚════██║██╔══██║██╔══██╗██║   ██║██║   ██║██║╚██╔╝██║
-// ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
-// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-//
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
+// SHROOM Flight Software
 
 #include "logger.h"
 
@@ -21,27 +14,25 @@ namespace
 {
 #if ENABLE_SD_LOGGING
 
-    // ============================================================================
     // Log files
-    // ============================================================================
 
-#if ENABLE_MAX31865 && LOG_MAX31865
+#if ENABLE_MAX31865
     File max31865_file;
 #endif
 
-#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+#if ENABLE_WSEN_PADS
     File wsen_pads_file;
 #endif
 
-#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+#if ENABLE_WSEN_HIDS
     File wsen_hids_file;
 #endif
 
-#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+#if ENABLE_WSEN_ISDS
     File wsen_isds_file;
 #endif
 
-#if ENABLE_AIRDOS && LOG_AIRDOS
+#if ENABLE_AIRDOS
     File airdos_file;
 #endif
 
@@ -52,9 +43,7 @@ namespace
     uint32_t logger_error_count = 0;
 
 
-    // ============================================================================
     // Helper functions
-    // ============================================================================
 
     /**
  * @brief Open a log file and add the CSV header if the file is empty.
@@ -120,9 +109,7 @@ namespace
 } // namespace
 
 
-// ============================================================================
 // Initialization
-// ============================================================================
 
 bool logger_init()
 {
@@ -144,7 +131,7 @@ bool logger_init()
     bool success = true;
 
 
-#if ENABLE_MAX31865 && LOG_MAX31865
+#if ENABLE_MAX31865
 
     if (!open_log_file(
         max31865_file,
@@ -158,7 +145,7 @@ bool logger_init()
 #endif
 
 
-#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+#if ENABLE_WSEN_PADS
 
     if (!open_log_file(
         wsen_pads_file,
@@ -172,7 +159,7 @@ bool logger_init()
 #endif
 
 
-#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+#if ENABLE_WSEN_HIDS
 
     if (!open_log_file(
         wsen_hids_file,
@@ -186,7 +173,7 @@ bool logger_init()
 #endif
 
 
-#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+#if ENABLE_WSEN_ISDS
 
     if (!open_log_file(
         wsen_isds_file,
@@ -200,7 +187,7 @@ bool logger_init()
 #endif
 
 
-#if ENABLE_AIRDOS && LOG_AIRDOS
+#if ENABLE_AIRDOS
 
     if (!open_log_file(
         airdos_file,
@@ -220,16 +207,14 @@ bool logger_init()
 }
 
 
-// ============================================================================
 // MAX31865
-// ============================================================================
 
 void logger_log_max31865(
     uint8_t sensor_index,
     float temperature_k
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_MAX31865 && LOG_MAX31865
+#if ENABLE_SD_LOGGING && ENABLE_MAX31865
 
     if (!max31865_file)
     {
@@ -251,16 +236,14 @@ void logger_log_max31865(
 }
 
 
-// ============================================================================
 // WSEN-PADS
-// ============================================================================
 
 void logger_log_wsen_pads(
     float temperature_k,
     float pressure_pa
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS && LOG_WSEN_PADS
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS
 
     if (!wsen_pads_file)
     {
@@ -282,16 +265,14 @@ void logger_log_wsen_pads(
 }
 
 
-// ============================================================================
 // WSEN-HIDS
-// ============================================================================
 
 void logger_log_wsen_hids(
     float temperature_k,
     float humidity_percent
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS
 
     if (!wsen_hids_file)
     {
@@ -313,9 +294,7 @@ void logger_log_wsen_hids(
 }
 
 
-// ============================================================================
 // WSEN-ISDS
-// ============================================================================
 
 void logger_log_wsen_isds(
     float accel_x,
@@ -326,7 +305,7 @@ void logger_log_wsen_isds(
     float gyro_z
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS
 
     if (!wsen_isds_file)
     {
@@ -360,16 +339,14 @@ void logger_log_wsen_isds(
 }
 
 
-// ============================================================================
 // AIRDOS
-// ============================================================================
 
 void logger_log_airdos(
     uint8_t sensor_index,
     const char* data
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_AIRDOS && LOG_AIRDOS
+#if ENABLE_SD_LOGGING && ENABLE_AIRDOS
 
     if (!airdos_file)
     {
@@ -391,9 +368,7 @@ void logger_log_airdos(
 }
 
 
-// ============================================================================
 // Periodic flush
-// ============================================================================
 
 void logger_update()
 {
@@ -410,23 +385,23 @@ void logger_update()
     last_flush_time = current_time;
 
 
-#if ENABLE_MAX31865 && LOG_MAX31865
+#if ENABLE_MAX31865
     flush_file(max31865_file);
 #endif
 
-#if ENABLE_WSEN_PADS && LOG_WSEN_PADS
+#if ENABLE_WSEN_PADS
     flush_file(wsen_pads_file);
 #endif
 
-#if ENABLE_WSEN_HIDS && LOG_WSEN_HIDS
+#if ENABLE_WSEN_HIDS
     flush_file(wsen_hids_file);
 #endif
 
-#if ENABLE_WSEN_ISDS && LOG_WSEN_ISDS
+#if ENABLE_WSEN_ISDS
     flush_file(wsen_isds_file);
 #endif
 
-#if ENABLE_AIRDOS && LOG_AIRDOS
+#if ENABLE_AIRDOS
     flush_file(airdos_file);
 #endif
 

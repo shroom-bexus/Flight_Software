@@ -1,11 +1,4 @@
-// ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
-// ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
-// ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
-// ╚════██║██╔══██║██╔══██╗██║   ██║██║   ██║██║╚██╔╝██║
-// ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
-// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-//
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
+// SHROOM Flight Software
 
 #include "max31865.h"
 
@@ -16,113 +9,33 @@
 
 namespace
 {
-    // ============================================================================
-    // Channel configuration
-    // ============================================================================
-
-    constexpr bool channel_enabled[] =
-    {
-        MAX31865_TEMP_1_ENABLED,
-        MAX31865_TEMP_2_ENABLED,
-        MAX31865_TEMP_3_ENABLED,
-        MAX31865_TEMP_4_ENABLED,
-        MAX31865_TEMP_5_ENABLED,
-        MAX31865_TEMP_6_ENABLED,
-        MAX31865_TEMP_7_ENABLED,
-        MAX31865_TEMP_8_ENABLED,
-        MAX31865_TEMP_9_ENABLED
-    };
-
-
+    // One driver instance is assigned to every configured chip-select pin.
     Adafruit_MAX31865 max_sensors[] =
     {
-        Adafruit_MAX31865(MAX31865_CS_1, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_2, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_3, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_4, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_5, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_6, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_7, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_8, &MAX31865_SPI_BUS),
-        Adafruit_MAX31865(MAX31865_CS_9, &MAX31865_SPI_BUS)
-    };
-
-
-    constexpr float reference_resistors[] =
-    {
-        MAX31865_RREF_1,
-        MAX31865_RREF_2,
-        MAX31865_RREF_3,
-        MAX31865_RREF_4,
-        MAX31865_RREF_5,
-        MAX31865_RREF_6,
-        MAX31865_RREF_7,
-        MAX31865_RREF_8,
-        MAX31865_RREF_9
-    };
-
-
-    constexpr float calibration_scale[] =
-    {
-        MAX31865_SCALE_1,
-        MAX31865_SCALE_2,
-        MAX31865_SCALE_3,
-        MAX31865_SCALE_4,
-        MAX31865_SCALE_5,
-        MAX31865_SCALE_6,
-        MAX31865_SCALE_7,
-        MAX31865_SCALE_8,
-        MAX31865_SCALE_9
-    };
-
-
-    constexpr float calibration_offset_c[] =
-    {
-        MAX31865_OFFSET_C_1,
-        MAX31865_OFFSET_C_2,
-        MAX31865_OFFSET_C_3,
-        MAX31865_OFFSET_C_4,
-        MAX31865_OFFSET_C_5,
-        MAX31865_OFFSET_C_6,
-        MAX31865_OFFSET_C_7,
-        MAX31865_OFFSET_C_8,
-        MAX31865_OFFSET_C_9
+        Adafruit_MAX31865(MAX31865_CS_PINS[0], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[1], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[2], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[3], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[4], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[5], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[6], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[7], &MAX31865_SPI_BUS),
+        Adafruit_MAX31865(MAX31865_CS_PINS[8], &MAX31865_SPI_BUS)
     };
 
 
     // Compile-time checks prevent configuration arrays from becoming inconsistent.
     static_assert(
-        sizeof(channel_enabled) / sizeof(channel_enabled[0]) ==
-        MAX31865_CHANNEL_COUNT
-    );
-
-    static_assert(
         sizeof(max_sensors) / sizeof(max_sensors[0]) ==
         MAX31865_CHANNEL_COUNT
     );
 
-    static_assert(
-        sizeof(reference_resistors) / sizeof(reference_resistors[0]) ==
-        MAX31865_CHANNEL_COUNT
-    );
 
-    static_assert(
-        sizeof(calibration_scale) / sizeof(calibration_scale[0]) ==
-        MAX31865_CHANNEL_COUNT
-    );
-
-    static_assert(
-        sizeof(calibration_offset_c) / sizeof(calibration_offset_c[0]) ==
-        MAX31865_CHANNEL_COUNT
-    );
-
-
-    // ============================================================================
     // Runtime state
-    // ============================================================================
 
     struct SensorState
     {
+        // Keep the last valid value while validity describes the latest cycle.
         float temperature_k = NAN;
 
         uint32_t error_count = 0;
@@ -136,9 +49,7 @@ namespace
     SensorState sensor_state[MAX31865_CHANNEL_COUNT];
 
 
-    // ============================================================================
     // Helper functions
-    // ============================================================================
 
     bool index_valid(uint8_t index)
     {
@@ -147,9 +58,7 @@ namespace
 } // namespace
 
 
-// ============================================================================
 // Initialization
-// ============================================================================
 
 bool max31865_init()
 {
@@ -159,7 +68,7 @@ bool max31865_init()
     {
         sensor_state[i] = {};
 
-        if (!channel_enabled[i])
+        if (!MAX31865_ENABLED[i])
         {
             continue;
         }
@@ -178,9 +87,7 @@ bool max31865_init()
 }
 
 
-// ============================================================================
 // Measurement
-// ============================================================================
 
 bool max31865_update()
 {
@@ -188,7 +95,7 @@ bool max31865_update()
 
     for (uint8_t i = 0; i < MAX31865_CHANNEL_COUNT; ++i)
     {
-        if (!channel_enabled[i])
+        if (!MAX31865_ENABLED[i])
         {
             continue;
         }
@@ -215,10 +122,11 @@ bool max31865_update()
         }
 
 
+        // Read with the channel-specific measured reference resistance.
         const float measured_c =
             max_sensors[i].temperature(
                 MAX31865_RNOMINAL,
-                reference_resistors[i]
+                MAX31865_RREF[i]
             );
 
 
@@ -235,9 +143,10 @@ bool max31865_update()
         }
 
 
+        // Apply the individual linear calibration before converting to Kelvin.
         const float calibrated_c =
-            measured_c * calibration_scale[i] +
-            calibration_offset_c[i];
+            measured_c * MAX31865_SCALE[i] +
+            MAX31865_OFFSET_C[i];
 
         state.temperature_k =
             calibrated_c + 273.15f;
@@ -249,9 +158,7 @@ bool max31865_update()
 }
 
 
-// ============================================================================
 // Getter functions
-// ============================================================================
 
 float max31865_get_temperature(TempSensor sensor)
 {
@@ -273,7 +180,7 @@ bool max31865_is_enabled(TempSensor sensor)
         static_cast<uint8_t>(sensor);
 
     return index_valid(index) &&
-        channel_enabled[index];
+        MAX31865_ENABLED[index];
 }
 
 
@@ -283,7 +190,7 @@ bool max31865_data_valid(TempSensor sensor)
         static_cast<uint8_t>(sensor);
 
     return index_valid(index) &&
-        channel_enabled[index] &&
+        MAX31865_ENABLED[index] &&
         sensor_state[index].valid;
 }
 
@@ -321,6 +228,6 @@ bool max31865_is_initialized(TempSensor sensor)
         static_cast<uint8_t>(sensor);
 
     return index_valid(index) &&
-        channel_enabled[index] &&
+        MAX31865_ENABLED[index] &&
         sensor_state[index].initialized;
 }

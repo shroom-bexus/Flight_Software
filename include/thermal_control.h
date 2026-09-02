@@ -1,12 +1,5 @@
-// ███████╗██╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗
-// ██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔═══██╗████╗ ████║
-// ███████╗███████║██████╔╝██║   ██║██║   ██║██╔████╔██║
-// ╚════██║██╔══██║██╔══██╗██║   ██║██║   ██║██║╚██╔╝██║
-// ███████║██║  ██║██║  ██║╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
-// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
-//
-// Stratospheric High-Altitude Radiation Observation of Organismic Mycology
-// thermal_control.h
+// SHROOM Flight Software
+// Thermal controller
 
 #ifndef FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 #define FLIGHT_SOFTWARE_THERMAL_CONTROL_H
@@ -37,14 +30,6 @@ void thermal_control_update();
  * @return Heater output in percent.
  */
 float thermal_control_get_output();
-
-
-/**
- * @brief Check whether the thermal controller currently has a valid state.
- *
- * @return true if the controller has processed a valid temperature measurement.
- */
-bool thermal_control_is_active();
 
 
 /**
