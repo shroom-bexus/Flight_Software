@@ -129,6 +129,7 @@ constexpr uint8_t ETHERNET_GATEWAY[] = {0, 0, 0, 0};
 constexpr uint8_t ETHERNET_DNS[] = {0, 0, 0, 0};
 constexpr uint16_t ETHERNET_TCP_PORT = 5000;
 constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
+constexpr size_t ETHERNET_TX_BUFFER_SIZE = 128;
 // 0 disables the limiter until the ground station applies its saved setting.
 constexpr float ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S = 0.0f;
 constexpr float ETHERNET_MIN_DOWNLINK_LIMIT_KBIT_S = 2.0f;

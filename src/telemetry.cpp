@@ -50,7 +50,7 @@ void send_sensor_health(
         health_state(initialized, valid, errors),
         static_cast<unsigned long>(errors)
     );
-    ethernet_link_send_priority_line(message);
+    ethernet_link_send_line(message);
 }
 } // namespace
 #endif
@@ -158,7 +158,7 @@ void telemetry_update()
         logger_is_ready() ? "OK" : "FAULT",
         static_cast<unsigned long>(logger_get_error_count())
     );
-    ethernet_link_send_priority_line(message);
+    ethernet_link_send_line(message);
 #endif
 
 #if ENABLE_MAX31865
@@ -182,7 +182,7 @@ void telemetry_update()
             max31865_get_fault(sensor),
             static_cast<unsigned long>(max31865_get_error_count(sensor))
         );
-        ethernet_link_send_priority_line(message);
+        ethernet_link_send_line(message);
     }
 #endif
 
@@ -225,7 +225,7 @@ void telemetry_update()
         static_cast<unsigned long>(last_message_age),
         static_cast<unsigned long>(airdos_get_overflow_count())
     );
-    ethernet_link_send_priority_line(message);
+    ethernet_link_send_line(message);
 #endif
 #endif
 }

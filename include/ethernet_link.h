@@ -55,8 +55,8 @@ bool ethernet_link_send_line(
 /**
  * @brief Send an important message using reserved downlink capacity.
  *
- * ACK, NACK, WARN, and health messages use this function so ordinary
- * telemetry cannot consume their complete bandwidth allowance.
+ * ACK, NACK, and WARN messages use this function so ordinary telemetry
+ * cannot delay command responses.
  */
 bool ethernet_link_send_priority_line(
     const char* message
@@ -64,7 +64,7 @@ bool ethernet_link_send_priority_line(
 
 
 /**
- * @brief Set the maximum TCP payload downlink rate in kbit/s.
+ * @brief Set the estimated maximum wire downlink rate in kbit/s.
  *
  * A value of 0 disables rate limiting.
  *
@@ -73,7 +73,7 @@ bool ethernet_link_send_priority_line(
 bool ethernet_link_set_downlink_limit(float limit_kbit_s);
 
 
-/** @brief Return the active TCP payload downlink limit in kbit/s. */
+/** @brief Return the active estimated wire downlink limit in kbit/s. */
 float ethernet_link_get_downlink_limit();
 
 

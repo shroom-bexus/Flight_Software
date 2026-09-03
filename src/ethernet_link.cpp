@@ -12,6 +12,16 @@
 
 namespace
 {
+    // One TCP packet also carries Ethernet, IP, and TCP overhead. Including
+    // preamble and inter-frame gap makes this estimate deliberately safe.
+    constexpr size_t PACKET_OVERHEAD_BYTES = 78;
+    constexpr size_t MINIMUM_PACKET_BYTES = 84;
+
+    // With continuous refill, 0.6 seconds of tokens permits at most 0.8
+    // seconds of data in any 200 ms interval (the BEXUS 4x rule of thumb).
+    constexpr float TOKEN_CAPACITY_SECONDS = 0.6f;
+    constexpr float TELEMETRY_RATE_SHARE = 0.8f;
+
     // TCP server
 
     EthernetServer server(ETHERNET_TCP_PORT);
@@ -31,8 +41,18 @@ namespace
     float downlink_limit_kbit_s =
         ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S;
 
-    uint32_t downlink_window_start_ms = 0;
-    size_t downlink_window_bytes = 0;
+    struct TokenBucket
+    {
+        float tokens_bits = 0.0f;
+        float rate_bits_s = 0.0f;
+        float capacity_bits = 0.0f;
+        uint32_t last_refill_us = 0;
+    };
+
+    TokenBucket total_bucket;
+    TokenBucket telemetry_bucket;
+
+    char transmit_buffer[ETHERNET_TX_BUFFER_SIZE];
 
 
     // Helper functions
@@ -44,10 +64,45 @@ namespace
     }
 
 
-    void reset_downlink_window()
+    void configure_bucket(TokenBucket& bucket, float rate_bits_s)
     {
-        downlink_window_start_ms = millis();
-        downlink_window_bytes = 0;
+        bucket.rate_bits_s = rate_bits_s;
+        bucket.capacity_bits = rate_bits_s * TOKEN_CAPACITY_SECONDS;
+        bucket.tokens_bits = bucket.capacity_bits;
+        bucket.last_refill_us = micros();
+    }
+
+
+    void reset_downlink_buckets()
+    {
+        const float rate_bits_s = downlink_limit_kbit_s * 1000.0f;
+        configure_bucket(total_bucket, rate_bits_s);
+        configure_bucket(
+            telemetry_bucket,
+            rate_bits_s * TELEMETRY_RATE_SHARE
+        );
+    }
+
+
+    void refill_bucket(TokenBucket& bucket, uint32_t now_us)
+    {
+        const uint32_t elapsed_us = now_us - bucket.last_refill_us;
+        bucket.last_refill_us = now_us;
+        bucket.tokens_bits = min(
+            bucket.capacity_bits,
+            bucket.tokens_bits +
+                bucket.rate_bits_s * static_cast<float>(elapsed_us) / 1000000.0f
+        );
+    }
+
+
+    size_t estimated_packet_bits(size_t payload_bytes)
+    {
+        const size_t packet_bytes = max(
+            payload_bytes + PACKET_OVERHEAD_BYTES,
+            MINIMUM_PACKET_BYTES
+        );
+        return packet_bytes * 8;
     }
 
 
@@ -58,36 +113,44 @@ namespace
             return false;
         }
 
-        const size_t message_bytes = std::strlen(message) + 2;
-        const uint32_t now = millis();
-
-        if (now - downlink_window_start_ms >= 1000)
+        const size_t message_length = std::strlen(message);
+        const size_t payload_bytes = message_length + 1;
+        if (payload_bytes > sizeof(transmit_buffer))
         {
-            reset_downlink_window();
+            return false;
         }
+
+        const float packet_bits = static_cast<float>(
+            estimated_packet_bits(payload_bytes)
+        );
 
         if (downlink_limit_kbit_s > 0.0f)
         {
-            const size_t maximum_bytes = static_cast<size_t>(
-                downlink_limit_kbit_s * 125.0f
-            );
+            const uint32_t now_us = micros();
+            refill_bucket(total_bucket, now_us);
+            refill_bucket(telemetry_bucket, now_us);
 
-            // Ordinary telemetry may use at most 80 % of each window.
-            const size_t ordinary_bytes = maximum_bytes * 4 / 5;
-            const size_t allowed_bytes = priority
-                ? maximum_bytes
-                : ordinary_bytes;
-
-            if (downlink_window_bytes > allowed_bytes ||
-                message_bytes > allowed_bytes - downlink_window_bytes)
+            if (!priority &&
+                (packet_bits > total_bucket.tokens_bits ||
+                 packet_bits > telemetry_bucket.tokens_bits))
             {
                 return false;
             }
+
+            // Replies are rare and must not disappear. If necessary they
+            // borrow future capacity; telemetry then pauses until recovery.
+            total_bucket.tokens_bits -= packet_bits;
+            if (!priority) telemetry_bucket.tokens_bits -= packet_bits;
         }
 
-        const size_t bytes_sent = client.println(message);
-        downlink_window_bytes += bytes_sent;
-        return bytes_sent == message_bytes;
+        // One write keeps the line ending from becoming a separate TCP frame.
+        std::memcpy(transmit_buffer, message, message_length);
+        transmit_buffer[message_length] = '\n';
+        const size_t bytes_sent = client.write(
+            reinterpret_cast<const uint8_t*>(transmit_buffer),
+            payload_bytes
+        );
+        return bytes_sent == payload_bytes;
     }
 
 
@@ -171,7 +234,7 @@ bool ethernet_link_init()
     server.begin();
 
     reset_receive_buffer();
-    reset_downlink_window();
+    reset_downlink_buckets();
 
     return true;
 }
@@ -198,7 +261,7 @@ void ethernet_link_update()
         {
             client = new_client;
             reset_receive_buffer();
-            reset_downlink_window();
+            reset_downlink_buckets();
 
             Serial.println("Ground station connected.");
         }
@@ -326,7 +389,7 @@ bool ethernet_link_set_downlink_limit(float limit_kbit_s)
     }
 
     downlink_limit_kbit_s = limit_kbit_s;
-    reset_downlink_window();
+    reset_downlink_buckets();
     return true;
 }
 
