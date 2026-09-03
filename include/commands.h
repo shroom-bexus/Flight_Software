@@ -9,7 +9,8 @@
  *
  * Command format:
  *
- * CMD,<command>[,<arguments>]
+ * HELLO,<session_id>
+ * CMD,<command_id>,<command>[,<arguments>]
  */
 void commands_handle(const char* message);
 

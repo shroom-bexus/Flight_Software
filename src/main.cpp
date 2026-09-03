@@ -65,7 +65,7 @@ void update_ethernet()
 #if ENABLE_ETHERNET
     if (!ethernet_ready) return;
 
-    // Service the TCP connection, then dispatch one complete command line.
+    // Service UDP traffic, then dispatch one complete command.
     ethernet_link_update();
     if (ethernet_link_read_line(ethernet_rx_line, sizeof(ethernet_rx_line)))
     {

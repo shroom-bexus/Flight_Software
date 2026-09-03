@@ -7,7 +7,7 @@
 
 
 /**
- * @brief Initialize the Ethernet interface and TCP server.
+ * @brief Initialize the Ethernet interface and UDP endpoint.
  *
  * @return true if the Ethernet stack was initialized.
  */
@@ -15,7 +15,7 @@ bool ethernet_link_init();
 
 
 /**
- * @brief Handle Ethernet connections and incoming data.
+ * @brief Receive commands and periodically transmit queued telemetry.
  *
  * Call continuously from loop().
  */
@@ -23,13 +23,13 @@ void ethernet_link_update();
 
 
 /**
- * @brief Check whether a ground station TCP client is connected.
+ * @brief Check whether the ground station contacted us recently.
  */
 bool ethernet_link_connected();
 
 
 /**
- * @brief Read one complete newline-terminated message.
+ * @brief Read one complete command received in a UDP datagram.
  *
  * @param buffer Destination buffer.
  * @param buffer_size Size of destination buffer.
@@ -43,9 +43,9 @@ bool ethernet_link_read_line(
 
 
 /**
- * @brief Send one newline-terminated message to the ground station.
+ * @brief Queue one telemetry line for the next UDP batch.
  *
- * @return true if the message was sent to a connected client.
+ * @return true if the line was added to the current batch.
  */
 bool ethernet_link_send_line(
     const char* message
@@ -53,7 +53,7 @@ bool ethernet_link_send_line(
 
 
 /**
- * @brief Send an important message using reserved downlink capacity.
+ * @brief Send an important message immediately in one UDP datagram.
  *
  * ACK, NACK, and WARN messages use this function so ordinary telemetry
  * cannot delay command responses.

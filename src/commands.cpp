@@ -18,6 +18,11 @@ namespace
 {
 using CommandHandler = void (*)(const char* args);
 
+uint16_t active_command_id = 0;
+uint16_t last_command_id = 0;
+bool last_command_available = false;
+char last_response[96];
+
 enum class PidGain
 {
     KP,
@@ -35,16 +40,33 @@ struct CommandEntry
 void send_reply(const char* type, const char* command, const char* detail = nullptr)
 {
     // Every response starts with ACK, NACK, or WARN.
-    char response[64];
     if (detail)
     {
-        snprintf(response, sizeof(response), "%s,%s,%s", type, command, detail);
-        ethernet_link_send_priority_line(response);
-        return;
+        snprintf(
+            last_response,
+            sizeof(last_response),
+            "%s,%u,%s,%s",
+            type,
+            active_command_id,
+            command,
+            detail
+        );
+    }
+    else
+    {
+        snprintf(
+            last_response,
+            sizeof(last_response),
+            "%s,%u,%s",
+            type,
+            active_command_id,
+            command
+        );
     }
 
-    snprintf(response, sizeof(response), "%s,%s", type, command);
-    ethernet_link_send_priority_line(response);
+    last_command_id = active_command_id;
+    last_command_available = true;
+    ethernet_link_send_priority_line(last_response);
 }
 
 bool parse_float(const char* text, float& value)
@@ -276,6 +298,7 @@ const CommandEntry command_table[] =
     {"SET_KP", handle_set_kp},
     {"SET_KI", handle_set_ki},
     {"SET_KD", handle_set_kd},
+    {"SET_DL_LIMIT", handle_set_downlink_limit},
     {"SET_DOWNLINK_LIMIT", handle_set_downlink_limit},
     {"SET_HEATER", handle_set_heater}
 };
@@ -283,9 +306,55 @@ const CommandEntry command_table[] =
 
 void commands_handle(const char* message)
 {
+    // A new GS process starts a new ID sequence with a short session token.
+    if (std::strncmp(message, "HELLO,", 6) == 0)
+    {
+        const char* session_id = message + 6;
+        const size_t length = std::strlen(session_id);
+        if (length == 0 || length > 8) return;
+
+        last_command_available = false;
+        char response[32];
+        snprintf(response, sizeof(response), "ACK_SESSION,%s", session_id);
+        ethernet_link_send_priority_line(response);
+        return;
+    }
+
     // Ignore normal telemetry or malformed input without the CMD prefix.
     if (std::strncmp(message, "CMD,", 4) != 0) return;
-    const char* command = message + 4;
+
+    // UDP commands carry an ID so retries cannot execute a change twice.
+    const char* id_text = message + 4;
+    char* id_end = nullptr;
+    const unsigned long parsed_id = strtoul(id_text, &id_end, 10);
+    if (id_text == id_end || *id_end != ',' || parsed_id > UINT16_MAX) return;
+    active_command_id = static_cast<uint16_t>(parsed_id);
+
+    if (last_command_available)
+    {
+        const int16_t difference = static_cast<int16_t>(
+            active_command_id - last_command_id
+        );
+        if (difference == 0)
+        {
+            ethernet_link_send_priority_line(last_response);
+            return;
+        }
+        if (difference < 0)
+        {
+            char response[64];
+            snprintf(
+                response,
+                sizeof(response),
+                "NACK,%u,STALE_COMMAND",
+                active_command_id
+            );
+            ethernet_link_send_priority_line(response);
+            return;
+        }
+    }
+
+    const char* command = id_end + 1;
 
     // Find an exact command-name match and pass on the remaining arguments.
     for (const CommandEntry& entry : command_table)
@@ -301,7 +370,7 @@ void commands_handle(const char* message)
         return;
     }
 
-    ethernet_link_send_priority_line("NACK,UNKNOWN_COMMAND");
+    send_reply("NACK", "UNKNOWN_COMMAND");
 }
 
 #endif // ENABLE_ETHERNET

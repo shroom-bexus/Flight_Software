@@ -127,9 +127,11 @@ constexpr uint8_t ETHERNET_LOCAL_IP[] = {172, 16, 18, 131};
 constexpr uint8_t ETHERNET_SUBNET[] = {255, 255, 255, 0}; // TODO: confirm with SSC
 constexpr uint8_t ETHERNET_GATEWAY[] = {0, 0, 0, 0};
 constexpr uint8_t ETHERNET_DNS[] = {0, 0, 0, 0};
-constexpr uint16_t ETHERNET_TCP_PORT = 5000;
+constexpr uint16_t ETHERNET_UDP_PORT = 5000;
 constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
-constexpr size_t ETHERNET_TX_BUFFER_SIZE = 128;
+constexpr size_t ETHERNET_UDP_PAYLOAD_MAX = 1200;
+constexpr uint32_t ETHERNET_TELEMETRY_BATCH_PERIOD_MS = 1000;
+constexpr uint32_t ETHERNET_GROUND_STATION_TIMEOUT_MS = 60000;
 // 0 disables the limiter until the ground station applies its saved setting.
 constexpr float ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S = 0.0f;
 constexpr float ETHERNET_MIN_DOWNLINK_LIMIT_KBIT_S = 2.0f;
