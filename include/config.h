@@ -120,7 +120,20 @@ constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
 // AIRDOS03
 constexpr uint32_t AIRDOS_BAUD_RATE = 115200;
 constexpr uint32_t AIRDOS_TIMEOUT_MS = 15000;
-#define AIRDOS_1_SERIAL Serial7
+
+#if FLIGHT_PRIMARY
+// Primary PCB routing: AIRDOS 8 -> Serial2, AIRDOS 9 -> Serial7.
+constexpr uint8_t AIRDOS_CHANNEL_COUNT = 2;
+constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {8, 9};
+#define AIRDOS_8_SERIAL Serial2
+#define AIRDOS_9_SERIAL Serial7
+#else
+// Secondary AIRDOS 1-7 are implemented separately later. Keep the existing
+// single-channel behavior until that integration is done.
+constexpr uint8_t AIRDOS_CHANNEL_COUNT = 1;
+constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {0};
+#define AIRDOS_LEGACY_SERIAL Serial7
+#endif
 
 // Ethernet
 constexpr uint8_t ETHERNET_LOCAL_IP[] = {172, 16, 18, 131};

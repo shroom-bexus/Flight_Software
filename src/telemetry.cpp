@@ -137,6 +137,32 @@ void telemetry_send_hids()
 #endif
 }
 
+
+void telemetry_send_airdos(uint8_t sensor_id, const char* data)
+{
+#if ENABLE_ETHERNET && ENABLE_AIRDOS
+    if (!ethernet_link_connected() || data == nullptr) return;
+
+    // AIRDOS raw messages may contain many comma-separated fields. Keep the
+    // complete UART line unchanged after the sensor identifier.
+    char message[384];
+    const int length = snprintf(
+        message,
+        sizeof(message),
+        "AIRDOS,%lu,%u,%s",
+        static_cast<unsigned long>(millis()),
+        sensor_id,
+        data
+    );
+
+    if (length <= 0 || static_cast<size_t>(length) >= sizeof(message)) return;
+    ethernet_link_send_line(message);
+#else
+    (void)sensor_id;
+    (void)data;
+#endif
+}
+
 void telemetry_update()
 {
 #if ENABLE_ETHERNET
@@ -207,25 +233,32 @@ void telemetry_update()
 #endif
 
 #if ENABLE_AIRDOS
-    // AIRDOS is healthy while complete messages continue to arrive in time.
-    uint32_t last_message_age = 0;
-    const bool received = airdos_has_received_data();
-    if (received) last_message_age = time_ms - airdos_get_last_message_ms();
+    // Report each AIRDOS channel independently.
+    for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
+    {
+        uint32_t last_message_age = 0;
+        const bool received = airdos_has_received_data(i);
+        if (received)
+        {
+            last_message_age = time_ms - airdos_get_last_message_ms(i);
+        }
 
-    const char* state = received
-        ? (last_message_age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
-        : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
+        const char* state = received
+            ? (last_message_age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
+            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
 
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,AIRDOS,%s,%lu,%lu",
-        static_cast<unsigned long>(time_ms),
-        state,
-        static_cast<unsigned long>(last_message_age),
-        static_cast<unsigned long>(airdos_get_overflow_count())
-    );
-    ethernet_link_send_line(message);
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
+            static_cast<unsigned long>(time_ms),
+            airdos_get_sensor_id(i),
+            state,
+            static_cast<unsigned long>(last_message_age),
+            static_cast<unsigned long>(airdos_get_overflow_count(i))
+        );
+        ethernet_link_send_line(message);
+    }
 #endif
 #endif
 }

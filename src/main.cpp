@@ -140,10 +140,17 @@ void update_hids()
 void update_airdos()
 {
 #if ENABLE_AIRDOS
-    // Drain every complete UART line already waiting in the receive buffer.
-    while (airdos_update())
+    // Drain every complete UART line already waiting on every AIRDOS channel.
+    for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
     {
-        logger_log_airdos(0, airdos_get_data());
+        while (airdos_update(i))
+        {
+            const uint8_t sensor_id = airdos_get_sensor_id(i);
+            const char* data = airdos_get_data(i);
+
+            logger_log_airdos(sensor_id, data);
+            telemetry_send_airdos(sensor_id, data);
+        }
     }
 #endif
 }
