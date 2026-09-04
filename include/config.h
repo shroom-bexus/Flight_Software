@@ -57,10 +57,11 @@ constexpr uint32_t I2C_CLOCK_HZ = 400000;
 
 // MAX31865 / PT1000 channels
 constexpr uint8_t MAX31865_CHANNEL_COUNT = 9;
-// Set false for channels without a connected RTD.
+// All nine flight channels are always monitored. Missing/disconnected RTDs
+// are reported through health telemetry as FAULT instead of being hidden.
 constexpr bool MAX31865_ENABLED[MAX31865_CHANNEL_COUNT] =
 {
-    true, false, false, false, false, false, false, false, false
+    true, true, true, true, true, true, true, true, true
 };
 constexpr uint8_t MAX31865_CS_PINS[MAX31865_CHANNEL_COUNT] =
 {

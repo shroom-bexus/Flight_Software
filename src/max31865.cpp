@@ -41,6 +41,10 @@ namespace
         uint32_t error_count = 0;
         uint8_t fault = 0;
 
+        // Prevent one persistent hardware fault from incrementing the counter
+        // on every 1 s measurement cycle.
+        bool fault_active = false;
+
         bool initialized = false;
         bool valid = false;
     };
@@ -78,7 +82,12 @@ bool max31865_init()
 
         if (!sensor_state[i].initialized)
         {
-            ++sensor_state[i].error_count;
+            if (!sensor_state[i].fault_active)
+            {
+                ++sensor_state[i].error_count;
+                sensor_state[i].fault_active = true;
+            }
+
             success = false;
         }
     }
@@ -115,7 +124,12 @@ bool max31865_update()
 
             if (!state.initialized)
             {
-                ++state.error_count;
+                if (!state.fault_active)
+                {
+                    ++state.error_count;
+                    state.fault_active = true;
+                }
+
                 success = false;
                 continue;
             }
@@ -134,7 +148,12 @@ bool max31865_update()
 
         if (state.fault != 0)
         {
-            ++state.error_count;
+            if (!state.fault_active)
+            {
+                ++state.error_count;
+                state.fault_active = true;
+            }
+
             success = false;
 
             max_sensors[i].clearFault();
@@ -152,6 +171,9 @@ bool max31865_update()
             calibrated_c + 273.15f;
 
         state.valid = true;
+
+        // A valid measurement ends the current fault episode.
+        state.fault_active = false;
     }
 
     return success;
