@@ -66,18 +66,17 @@ namespace
 
 bool wsen_hids_init()
 {
-    temperature_k = NAN;
-    humidity_percent = NAN;
-
+    // Keep the last valid values and accumulated error history across
+    // recovery attempts.
     initialized = false;
     last_measurement_valid = false;
-    error_count = 0;
 
     Wire.beginTransmission(WSEN_HIDS_I2C_ADDRESS);
 
     if (Wire.endTransmission() != 0)
     {
         ++error_count;
+        initialized = false;
         return false;
     }
 
@@ -91,6 +90,12 @@ bool wsen_hids_init()
 
 bool wsen_hids_update()
 {
+    // Retry automatically after a failed boot initialization or I2C loss.
+    if (!initialized && !wsen_hids_init())
+    {
+        return false;
+    }
+
     // The validity flag always describes the most recent update.
     // Previous valid values remain stored if this measurement fails.
     last_measurement_valid = false;
@@ -115,6 +120,7 @@ bool wsen_hids_update()
         HIDS_DATA_LENGTH) != HIDS_DATA_LENGTH)
     {
         ++error_count;
+        initialized = false;
         return false;
     }
 

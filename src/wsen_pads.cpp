@@ -156,23 +156,23 @@ namespace
 
 bool wsen_pads_init()
 {
-    pressure_pa = NAN;
-    temperature_k = NAN;
-
+    // Keep the last valid values and accumulated error history across
+    // recovery attempts.
     initialized = false;
     last_measurement_valid = false;
-    error_count = 0;
 
     // Verify that the expected sensor is connected.
     uint8_t device_id;
 
     if (!read_register(REG_DEVICE_ID, device_id))
     {
+        ++error_count;
         return false;
     }
 
     if (device_id != DEVICE_ID)
     {
+        ++error_count;
         return false;
     }
 
@@ -182,11 +182,13 @@ bool wsen_pads_init()
 
     if (!read_register(REG_CTRL_2, ctrl2))
     {
+        ++error_count;
         return false;
     }
 
     if (!write_register(REG_CTRL_2, ctrl2 | CTRL2_SWRESET))
     {
+        ++error_count;
         return false;
     }
 
@@ -204,6 +206,7 @@ bool wsen_pads_init()
 
     if (!write_register(REG_CTRL_2, ctrl2))
     {
+        ++error_count;
         return false;
     }
 
@@ -213,6 +216,7 @@ bool wsen_pads_init()
 
     if (!get_odr_bits(WSEN_PADS_ODR_HZ, odr_bits))
     {
+        ++error_count;
         return false;
     }
 
@@ -234,6 +238,12 @@ bool wsen_pads_init()
 
 bool wsen_pads_update()
 {
+    // Retry automatically after a failed boot initialization or I2C loss.
+    if (!initialized && !wsen_pads_init())
+    {
+        return false;
+    }
+
     // The validity flag always describes the most recent update.
     // The last valid measurement values remain stored after an error.
     last_measurement_valid = false;
@@ -243,6 +253,7 @@ bool wsen_pads_update()
     if (!read_register(REG_STATUS, status))
     {
         ++error_count;
+        initialized = false;
         return false;
     }
 
@@ -259,6 +270,7 @@ bool wsen_pads_update()
     if (!read_registers(REG_PRESS_XL, data, sizeof(data)))
     {
         ++error_count;
+        initialized = false;
         return false;
     }
 

@@ -42,12 +42,9 @@ elapsedMillis max31865_timer;
 #endif
 #if ENABLE_WSEN_PADS
 elapsedMillis pads_timer;
-// A failed initialization keeps the sensor out of the update loop.
-bool pads_ready = false;
 #endif
 #if ENABLE_WSEN_HIDS
 elapsedMillis hids_timer;
-bool hids_ready = false;
 #endif
 #if ENABLE_ETHERNET
 bool ethernet_ready = false;
@@ -109,7 +106,7 @@ void update_max31865()
 void update_pads()
 {
 #if ENABLE_WSEN_PADS
-    if (!pads_ready || pads_timer < WSEN_PADS_SAMPLE_PERIOD_MS) return;
+    if (pads_timer < WSEN_PADS_SAMPLE_PERIOD_MS) return;
     pads_timer = 0;
 
     // Only store and transmit complete measurements.
@@ -127,7 +124,7 @@ void update_pads()
 void update_hids()
 {
 #if ENABLE_WSEN_HIDS
-    if (!hids_ready || hids_timer < WSEN_HIDS_SAMPLE_PERIOD_MS) return;
+    if (hids_timer < WSEN_HIDS_SAMPLE_PERIOD_MS) return;
     hids_timer = 0;
 
     // HIDS follows the same update path as PADS.
@@ -197,12 +194,10 @@ void setup()
     Serial.println("Thermal control: OK");
 #endif
 #if ENABLE_WSEN_PADS
-    pads_ready = wsen_pads_init();
-    print_init_result("WSEN-PADS", pads_ready);
+    print_init_result("WSEN-PADS", wsen_pads_init());
 #endif
 #if ENABLE_WSEN_HIDS
-    hids_ready = wsen_hids_init();
-    print_init_result("WSEN-HIDS", hids_ready);
+    print_init_result("WSEN-HIDS", wsen_hids_init());
 #endif
 #if ENABLE_AIRDOS
     airdos_init();
