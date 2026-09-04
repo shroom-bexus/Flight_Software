@@ -13,6 +13,7 @@
 #include "logger.h"
 #include "max31865.h"
 #include "wsen_hids.h"
+#include "wsen_isds.h"
 #include "wsen_pads.h"
 
 #if ENABLE_THERMAL_CONTROL
@@ -250,6 +251,16 @@ void telemetry_update()
         wsen_hids_is_initialized(),
         wsen_hids_data_valid(),
         wsen_hids_get_error_count()
+    );
+#endif
+
+#if ENABLE_WSEN_ISDS
+    send_sensor_health(
+        time_ms,
+        "ISDS",
+        wsen_isds_is_initialized(),
+        wsen_isds_data_valid(),
+        wsen_isds_get_error_count()
     );
 #endif
 

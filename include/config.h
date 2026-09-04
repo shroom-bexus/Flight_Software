@@ -30,7 +30,7 @@
 #define ENABLE_MAX31865        true
 #define ENABLE_WSEN_PADS       true
 #define ENABLE_WSEN_HIDS       true
-#define ENABLE_WSEN_ISDS       false
+#define ENABLE_WSEN_ISDS       true
 #define ENABLE_AIRDOS          true
 #else
 #define ENABLE_ETHERNET        false
@@ -117,6 +117,19 @@ constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
 constexpr uint8_t WSEN_PADS_ADDRESS = 0x5D;
 constexpr uint16_t WSEN_PADS_ODR_HZ = 10;
 constexpr uint8_t WSEN_HIDS_I2C_ADDRESS = 0x44;
+
+// WSEN-ISDS
+// The PCB pulls SA0 high, therefore the 7-bit I2C address is 0x6B.
+constexpr uint8_t WSEN_ISDS_I2C_ADDRESS = 0x6B;
+constexpr uint16_t WSEN_ISDS_ODR_HZ = 104;
+constexpr uint8_t WSEN_ISDS_ACCEL_RANGE_G = 16;
+constexpr uint16_t WSEN_ISDS_GYRO_RANGE_DPS = 2000;
+constexpr uint32_t WSEN_ISDS_RETRY_PERIOD_MS = 1000;
+
+// Initial event thresholds. The IMU is sampled continuously, but only samples
+// above one of these thresholds are written to the SD card.
+constexpr float WSEN_ISDS_ACCEL_EVENT_THRESHOLD_G = 0.5f;
+constexpr float WSEN_ISDS_GYRO_EVENT_THRESHOLD_DPS = 100.0f;
 
 // AIRDOS03
 constexpr uint32_t AIRDOS_BAUD_RATE = 115200;

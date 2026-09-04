@@ -30,6 +30,9 @@
 #if ENABLE_WSEN_HIDS
 #include "wsen_hids.h"
 #endif
+#if ENABLE_WSEN_ISDS
+#include "wsen_isds.h"
+#endif
 #if ENABLE_WSEN_PADS
 #include "wsen_pads.h"
 #endif
@@ -45,6 +48,9 @@ elapsedMillis pads_timer;
 #endif
 #if ENABLE_WSEN_HIDS
 elapsedMillis hids_timer;
+#endif
+#if ENABLE_WSEN_ISDS
+elapsedMillis isds_timer;
 #endif
 #if ENABLE_ETHERNET
 bool ethernet_ready = false;
@@ -139,6 +145,27 @@ void update_hids()
 #endif
 }
 
+void update_isds()
+{
+#if ENABLE_WSEN_ISDS
+    if (isds_timer < WSEN_ISDS_SAMPLE_PERIOD_MS) return;
+    isds_timer = 0;
+
+    // Sample at high rate, but only store configured motion events.
+    if (wsen_isds_update() && wsen_isds_event_detected())
+    {
+        logger_log_wsen_isds(
+            wsen_isds_get_accel_x(),
+            wsen_isds_get_accel_y(),
+            wsen_isds_get_accel_z(),
+            wsen_isds_get_gyro_x(),
+            wsen_isds_get_gyro_y(),
+            wsen_isds_get_gyro_z()
+        );
+    }
+#endif
+}
+
 void update_airdos()
 {
 #if ENABLE_AIRDOS
@@ -199,6 +226,9 @@ void setup()
 #if ENABLE_WSEN_HIDS
     print_init_result("WSEN-HIDS", wsen_hids_init());
 #endif
+#if ENABLE_WSEN_ISDS
+    print_init_result("WSEN-ISDS", wsen_isds_init());
+#endif
 #if ENABLE_AIRDOS
     airdos_init();
     Serial.println("AIRDOS: OK");
@@ -218,6 +248,7 @@ void loop()
     update_max31865();
     update_pads();
     update_hids();
+    update_isds();
     update_airdos();
     telemetry_update();
     logger_update();
