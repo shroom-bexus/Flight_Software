@@ -25,11 +25,11 @@ void logger_update();
 /**
  * @brief Log one MAX31865 temperature measurement.
  *
- * @param sensor_index Sensor channel, starting at 0.
+ * @param sensor_id Sensor identifier, starting at 1.
  * @param temperature_k Temperature in Kelvin.
  */
 void logger_log_max31865(
-    uint8_t sensor_index,
+    uint8_t sensor_id,
     float temperature_k
 );
 

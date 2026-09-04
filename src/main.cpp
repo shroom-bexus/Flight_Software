@@ -95,7 +95,12 @@ void update_max31865()
         const TempSensor sensor = static_cast<TempSensor>(i);
         if (max31865_data_valid(sensor))
         {
-            logger_log_max31865(i, max31865_get_temperature(sensor));
+            const uint8_t sensor_id = i + 1;
+            const float temperature_k = max31865_get_temperature(sensor);
+
+            // Use the same 1-based sensor ID on SD and downlink.
+            logger_log_max31865(sensor_id, temperature_k);
+            telemetry_send_max31865(sensor_id, temperature_k);
         }
     }
 #endif

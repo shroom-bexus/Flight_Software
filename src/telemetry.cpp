@@ -55,6 +55,27 @@ void send_sensor_health(
 } // namespace
 #endif
 
+void telemetry_send_max31865(uint8_t sensor_id, float temperature_k)
+{
+#if ENABLE_ETHERNET && ENABLE_MAX31865
+    if (!ethernet_link_connected()) return;
+
+    char message[64];
+    snprintf(
+        message,
+        sizeof(message),
+        "MAX31865,%lu,%u,%.3f",
+        static_cast<unsigned long>(millis()),
+        sensor_id,
+        temperature_k
+    );
+    ethernet_link_send_line(message);
+#else
+    (void)sensor_id;
+    (void)temperature_k;
+#endif
+}
+
 void telemetry_send_thermal()
 {
 #if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL

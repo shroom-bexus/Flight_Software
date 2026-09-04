@@ -9,6 +9,9 @@
 /** @brief Send the current thermal-controller and heater state. */
 void telemetry_send_thermal();
 
+/** @brief Send one valid MAX31865 temperature measurement. */
+void telemetry_send_max31865(uint8_t sensor_id, float temperature_k);
+
 /** @brief Send the latest WSEN-PADS measurement. */
 void telemetry_send_pads();
 

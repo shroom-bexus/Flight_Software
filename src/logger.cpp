@@ -210,7 +210,7 @@ bool logger_init()
 // MAX31865
 
 void logger_log_max31865(
-    uint8_t sensor_index,
+    uint8_t sensor_id,
     float temperature_k
 )
 {
@@ -223,13 +223,13 @@ void logger_log_max31865(
 
     write_timestamp(max31865_file);
 
-    max31865_file.print(sensor_index);
+    max31865_file.print(sensor_id);
     max31865_file.print(',');
     max31865_file.println(temperature_k, 3);
 
 #else
 
-    (void)sensor_index;
+    (void)sensor_id;
     (void)temperature_k;
 
 #endif
