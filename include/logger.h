@@ -6,6 +6,14 @@
 #include <Arduino.h>
 
 
+/** Storage device used by the USB download mode. */
+enum class LoggerStorage : uint8_t
+{
+    INTERNAL,
+    BACKUP
+};
+
+
 /**
  * @brief Initialize both storage devices and open all enabled log files.
  *
@@ -114,5 +122,41 @@ uint32_t logger_get_backup_sd_error_count();
 /** @brief Return the latest XTSD/SdFat error code and error data. */
 uint8_t logger_get_backup_sd_error_code();
 uint8_t logger_get_backup_sd_error_data();
+
+
+/**
+ * @brief Flush and close all log files before USB download.
+ *
+ * Logging stays stopped until the Teensy is reset.
+ */
+bool logger_enter_download_mode();
+
+
+/** @brief Check whether a storage device can be read. */
+bool logger_download_storage_available(LoggerStorage storage);
+
+
+/** @brief Return a file size without keeping the file open. */
+bool logger_download_file_size(
+    LoggerStorage storage,
+    const char* filename,
+    uint64_t& size
+);
+
+
+/** @brief Open one file for sequential USB download. */
+bool logger_download_open(
+    LoggerStorage storage,
+    const char* filename,
+    uint64_t& size
+);
+
+
+/** @brief Read the next bytes from the currently open download file. */
+int32_t logger_download_read(uint8_t* buffer, size_t size);
+
+
+/** @brief Close the currently open download file. */
+void logger_download_close();
 
 #endif // FLIGHT_SOFTWARE_LOGGER_H

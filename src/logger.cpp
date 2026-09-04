@@ -21,13 +21,22 @@ namespace
     uint32_t internal_sd_error_count = 0;
     uint32_t backup_sd_error_count = 0;
     uint32_t last_flush_time = 0;
+    bool download_mode = false;
+
+
+#if ENABLE_SD_LOGGING
+    File internal_download_file;
+#endif
 
 
 #if ENABLE_BACKUP_SD_LOGGING
     // Keep the global SD object assigned to the built-in SDIO card. The
     // soldered XTSD backup therefore gets its own independent SdFs instance.
     SdFs backup_sd;
+    FsFile backup_download_file;
 #endif
+
+    LoggerStorage download_storage = LoggerStorage::INTERNAL;
 
 
     void disable_internal_sd();
@@ -143,6 +152,13 @@ namespace
                 }
             }
 #endif
+        }
+
+
+        void close()
+        {
+            close_internal();
+            close_backup();
         }
 
 
@@ -339,6 +355,46 @@ namespace
         }
     }
 
+
+    void flush_all_files()
+    {
+#if ENABLE_MAX31865
+        flush_file(max31865_file);
+#endif
+#if ENABLE_WSEN_PADS
+        flush_file(wsen_pads_file);
+#endif
+#if ENABLE_WSEN_HIDS
+        flush_file(wsen_hids_file);
+#endif
+#if ENABLE_WSEN_ISDS
+        flush_file(wsen_isds_file);
+#endif
+#if ENABLE_AIRDOS
+        flush_file(airdos_file);
+#endif
+    }
+
+
+    void close_all_files()
+    {
+#if ENABLE_MAX31865
+        max31865_file.close();
+#endif
+#if ENABLE_WSEN_PADS
+        wsen_pads_file.close();
+#endif
+#if ENABLE_WSEN_HIDS
+        wsen_hids_file.close();
+#endif
+#if ENABLE_WSEN_ISDS
+        wsen_isds_file.close();
+#endif
+#if ENABLE_AIRDOS
+        airdos_file.close();
+#endif
+    }
+
 #endif // ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
 } // namespace
 
@@ -357,6 +413,7 @@ bool logger_init()
     backup_sd_ready = false;
     internal_sd_error_count = 0;
     backup_sd_error_count = 0;
+    download_mode = false;
 
 
 #if ENABLE_SD_LOGGING
@@ -616,6 +673,8 @@ void logger_update()
 {
 #if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
 
+    if (download_mode) return;
+
     const uint32_t current_time = millis();
 
     // Unsigned subtraction remains correct when millis() overflows.
@@ -627,25 +686,7 @@ void logger_update()
     last_flush_time = current_time;
 
 
-#if ENABLE_MAX31865
-    flush_file(max31865_file);
-#endif
-
-#if ENABLE_WSEN_PADS
-    flush_file(wsen_pads_file);
-#endif
-
-#if ENABLE_WSEN_HIDS
-    flush_file(wsen_hids_file);
-#endif
-
-#if ENABLE_WSEN_ISDS
-    flush_file(wsen_isds_file);
-#endif
-
-#if ENABLE_AIRDOS
-    flush_file(airdos_file);
-#endif
+    flush_all_files();
 
 #endif
 }
@@ -713,5 +754,157 @@ uint8_t logger_get_backup_sd_error_data()
     return backup_sd.sdErrorData();
 #else
     return 0;
+#endif
+}
+
+
+bool logger_enter_download_mode()
+{
+#if !ENABLE_SD_LOGGING && !ENABLE_BACKUP_SD_LOGGING
+    return false;
+#else
+    if (download_mode) return true;
+
+    // No writer may remain open while the same filesystem is downloaded.
+    flush_all_files();
+    close_all_files();
+    download_mode = true;
+
+    return internal_sd_ready || backup_sd_ready;
+#endif
+}
+
+
+bool logger_download_storage_available(LoggerStorage storage)
+{
+    if (!download_mode) return false;
+
+    if (storage == LoggerStorage::INTERNAL)
+    {
+#if ENABLE_SD_LOGGING
+        return internal_sd_ready;
+#else
+        return false;
+#endif
+    }
+
+#if ENABLE_BACKUP_SD_LOGGING
+    return backup_sd_ready;
+#else
+    return false;
+#endif
+}
+
+
+bool logger_download_file_size(
+    LoggerStorage storage,
+    const char* filename,
+    uint64_t& size
+)
+{
+    size = 0;
+    if (!logger_download_storage_available(storage) || filename == nullptr)
+    {
+        return false;
+    }
+
+    if (storage == LoggerStorage::INTERNAL)
+    {
+#if ENABLE_SD_LOGGING
+        File file = SD.open(filename, FILE_READ);
+        if (!file) return false;
+
+        size = file.size();
+        file.close();
+        return true;
+#endif
+    }
+    else
+    {
+#if ENABLE_BACKUP_SD_LOGGING
+        FsFile file = backup_sd.open(filename, O_RDONLY);
+        if (!file) return false;
+
+        size = file.size();
+        file.close();
+        return true;
+#endif
+    }
+
+    return false;
+}
+
+
+bool logger_download_open(
+    LoggerStorage storage,
+    const char* filename,
+    uint64_t& size
+)
+{
+    logger_download_close();
+    size = 0;
+
+    if (!logger_download_storage_available(storage) || filename == nullptr)
+    {
+        return false;
+    }
+
+    download_storage = storage;
+
+    if (storage == LoggerStorage::INTERNAL)
+    {
+#if ENABLE_SD_LOGGING
+        internal_download_file = SD.open(filename, FILE_READ);
+        if (!internal_download_file) return false;
+
+        size = internal_download_file.size();
+        return true;
+#endif
+    }
+    else
+    {
+#if ENABLE_BACKUP_SD_LOGGING
+        backup_download_file = backup_sd.open(filename, O_RDONLY);
+        if (!backup_download_file) return false;
+
+        size = backup_download_file.size();
+        return true;
+#endif
+    }
+
+    return false;
+}
+
+
+int32_t logger_download_read(uint8_t* buffer, size_t size)
+{
+    if (buffer == nullptr || size == 0) return 0;
+
+    if (download_storage == LoggerStorage::INTERNAL)
+    {
+#if ENABLE_SD_LOGGING
+        if (!internal_download_file) return -1;
+        return internal_download_file.read(buffer, size);
+#endif
+    }
+    else
+    {
+#if ENABLE_BACKUP_SD_LOGGING
+        if (!backup_download_file) return -1;
+        return backup_download_file.read(buffer, size);
+#endif
+    }
+
+    return -1;
+}
+
+
+void logger_download_close()
+{
+#if ENABLE_SD_LOGGING
+    internal_download_file.close();
+#endif
+#if ENABLE_BACKUP_SD_LOGGING
+    backup_download_file.close();
 #endif
 }

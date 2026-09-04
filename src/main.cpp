@@ -9,6 +9,7 @@
 #include "logger.h"
 #include "logo.h"
 #include "rtc.h"
+#include "storage_download.h"
 #include "telemetry.h"
 
 #if ENABLE_AIRDOS
@@ -260,6 +261,10 @@ void setup()
 
 void loop()
 {
+    // A USB download intentionally pauses all normal flight activity.
+    storage_download_update();
+    if (storage_download_is_active()) return;
+
     // Cooperative scheduler: every module decides whether work is due.
     update_ethernet();
     update_max31865();
