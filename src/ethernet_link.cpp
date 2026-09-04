@@ -16,8 +16,80 @@ namespace
 // Conservative UDP wire-size estimate including preamble and inter-frame gap.
 constexpr size_t PACKET_OVERHEAD_BYTES = 66;
 constexpr size_t MINIMUM_PACKET_BYTES = 84;
-constexpr float TOKEN_CAPACITY_SECONDS = 0.6f;
 constexpr size_t SEQUENCE_HEADER_MAX = 32;
+
+
+struct TelemetryLine
+{
+    char text[ETHERNET_TELEMETRY_LINE_MAX] = {};
+    uint16_t length = 0;
+    uint8_t sensor_id = 0;
+};
+
+
+template <size_t Capacity>
+class LineQueue
+{
+public:
+    bool push(const char* message, uint8_t sensor_id = 0)
+    {
+        if (message == nullptr || count_ >= Capacity) return false;
+
+        const size_t length = std::strlen(message);
+        if (length >= ETHERNET_TELEMETRY_LINE_MAX) return false;
+
+        TelemetryLine& line = lines_[tail_];
+        std::memcpy(line.text, message, length + 1);
+        line.length = static_cast<uint16_t>(length);
+        line.sensor_id = sensor_id;
+
+        tail_ = (tail_ + 1) % Capacity;
+        ++count_;
+        return true;
+    }
+
+    TelemetryLine* front()
+    {
+        return at(0);
+    }
+
+    TelemetryLine* at(size_t offset)
+    {
+        if (offset >= count_) return nullptr;
+        return &lines_[(head_ + offset) % Capacity];
+    }
+
+    void pop(size_t number = 1)
+    {
+        if (number > count_) number = count_;
+        head_ = (head_ + number) % Capacity;
+        count_ -= number;
+    }
+
+    void clear()
+    {
+        head_ = 0;
+        tail_ = 0;
+        count_ = 0;
+    }
+
+    size_t size() const
+    {
+        return count_;
+    }
+
+    bool empty() const
+    {
+        return count_ == 0;
+    }
+
+private:
+    TelemetryLine lines_[Capacity];
+    size_t head_ = 0;
+    size_t tail_ = 0;
+    size_t count_ = 0;
+};
+
 
 EthernetUDP udp;
 
@@ -29,22 +101,19 @@ bool ground_station_known = false;
 char receive_buffer[ETHERNET_RX_BUFFER_SIZE];
 bool command_ready = false;
 
-char telemetry_buffer[ETHERNET_UDP_PAYLOAD_MAX];
-size_t telemetry_length = 0;
+LineQueue<ETHERNET_SYSTEM_QUEUE_DEPTH> system_queue;
+LineQueue<ETHERNET_AIRDOS_QUEUE_DEPTH> airdos_queue;
+
 uint32_t telemetry_sequence = 0;
-uint32_t last_telemetry_send_ms = 0;
-
 float downlink_limit_kbit_s = ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S;
+uint32_t next_regular_send_us = 0;
 
-struct TokenBucket
-{
-    float tokens_bits = 0.0f;
-    float rate_bits_s = 0.0f;
-    float capacity_bits = 0.0f;
-    uint32_t last_refill_us = 0;
-};
+uint8_t airdos_downlink_level = AIRDOS_DOWNLINK_MAX_LEVEL;
+uint32_t airdos_queue_high_since_ms = 0;
+uint32_t airdos_queue_low_since_ms = 0;
 
-TokenBucket downlink_bucket;
+uint32_t telemetry_drop_count = 0;
+uint32_t airdos_suppressed_count = 0;
 
 
 void reset_receive_buffer()
@@ -54,33 +123,10 @@ void reset_receive_buffer()
 }
 
 
-void reset_telemetry_buffer()
+void reset_telemetry_queues()
 {
-    telemetry_length = 0;
-    telemetry_buffer[0] = '\0';
-}
-
-
-void reset_downlink_bucket()
-{
-    const float rate_bits_s = downlink_limit_kbit_s * 1000.0f;
-    downlink_bucket.rate_bits_s = rate_bits_s;
-    downlink_bucket.capacity_bits = rate_bits_s * TOKEN_CAPACITY_SECONDS;
-    downlink_bucket.tokens_bits = downlink_bucket.capacity_bits;
-    downlink_bucket.last_refill_us = micros();
-}
-
-
-void refill_downlink_bucket(uint32_t now_us)
-{
-    const uint32_t elapsed_us = now_us - downlink_bucket.last_refill_us;
-    downlink_bucket.last_refill_us = now_us;
-    downlink_bucket.tokens_bits = min(
-        downlink_bucket.capacity_bits,
-        downlink_bucket.tokens_bits +
-            downlink_bucket.rate_bits_s * static_cast<float>(elapsed_us) /
-                1000000.0f
-    );
+    system_queue.clear();
+    airdos_queue.clear();
 }
 
 
@@ -93,20 +139,43 @@ size_t estimated_packet_bits(size_t payload_bytes)
 }
 
 
-bool reserve_downlink(size_t payload_bytes, bool priority)
+bool send_time_reached(uint32_t now_us, uint32_t target_us)
 {
-    if (downlink_limit_kbit_s == 0.0f) return true;
+    return static_cast<int32_t>(now_us - target_us) >= 0;
+}
 
-    refill_downlink_bucket(micros());
 
-    // A batch may exceed the bucket capacity. Send one packet and carry its
-    // debt forward so the long-term rate remains limited.
-    if (!priority && downlink_bucket.tokens_bits < 0.0f) return false;
+void reset_rate_scheduler()
+{
+    next_regular_send_us = micros();
+}
 
-    downlink_bucket.tokens_bits -= static_cast<float>(
-        estimated_packet_bits(payload_bytes)
-    );
-    return true;
+
+bool regular_send_ready()
+{
+    return downlink_limit_kbit_s == 0.0f ||
+        send_time_reached(micros(), next_regular_send_us);
+}
+
+
+void charge_downlink(size_t payload_bytes)
+{
+    if (downlink_limit_kbit_s == 0.0f) return;
+
+    const float rate_bits_s = downlink_limit_kbit_s * 1000.0f;
+    const float interval_us_f =
+        static_cast<float>(estimated_packet_bits(payload_bytes)) *
+        1000000.0f / rate_bits_s;
+
+    const uint32_t interval_us = static_cast<uint32_t>(ceilf(interval_us_f));
+    const uint32_t now_us = micros();
+    const uint32_t base_us = send_time_reached(now_us, next_regular_send_us)
+        ? now_us
+        : next_regular_send_us;
+
+    // Priority packets are sent immediately, but their wire time is charged to
+    // the same schedule. Normal telemetry therefore waits afterwards.
+    next_regular_send_us = base_us + interval_us;
 }
 
 
@@ -123,59 +192,271 @@ bool send_immediate(const char* message)
     const size_t message_length = std::strlen(message);
     const size_t payload_length = message_length + 1;
     if (payload_length > ETHERNET_UDP_PAYLOAD_MAX) return false;
-    if (!reserve_downlink(payload_length, true)) return false;
     if (!begin_datagram()) return false;
 
     udp.write(reinterpret_cast<const uint8_t*>(message), message_length);
     udp.write(static_cast<uint8_t>('\n'));
-    return udp.endPacket() == 1;
+
+    if (udp.endPacket() != 1) return false;
+
+    charge_downlink(payload_length);
+    return true;
+}
+
+
+bool airdos_sensor_selected(uint8_t sensor_id)
+{
+    for (uint8_t group = 0; group < AIRDOS_SAMPLE_GROUP_COUNT; ++group)
+    {
+        for (uint8_t priority = 0;
+             priority < AIRDOS_SENSORS_PER_GROUP;
+             ++priority)
+        {
+            if (AIRDOS_DOWNLINK_PRIORITY[group][priority] != sensor_id)
+            {
+                continue;
+            }
+
+            return priority < airdos_downlink_level;
+        }
+    }
+
+    // Unknown sensor IDs are never put on the raw-data downlink.
+    return false;
+}
+
+
+void purge_unselected_airdos()
+{
+    const size_t queued = airdos_queue.size();
+
+    for (size_t i = 0; i < queued; ++i)
+    {
+        TelemetryLine* front = airdos_queue.front();
+        if (front == nullptr) break;
+
+        const TelemetryLine line = *front;
+        airdos_queue.pop();
+
+        if (airdos_sensor_selected(line.sensor_id))
+        {
+            // Space is guaranteed because one element was just removed.
+            airdos_queue.push(line.text, line.sensor_id);
+        }
+        else
+        {
+            ++airdos_suppressed_count;
+        }
+    }
+}
+
+
+void set_airdos_downlink_level(uint8_t level)
+{
+    if (level > AIRDOS_DOWNLINK_MAX_LEVEL)
+    {
+        level = AIRDOS_DOWNLINK_MAX_LEVEL;
+    }
+
+    if (level == airdos_downlink_level) return;
+
+    airdos_downlink_level = level;
+    airdos_queue_high_since_ms = 0;
+    airdos_queue_low_since_ms = 0;
+    purge_unselected_airdos();
+}
+
+
+void reduce_airdos_downlink_level()
+{
+    if (airdos_downlink_level == 0) return;
+    set_airdos_downlink_level(airdos_downlink_level - 1);
+}
+
+
+bool queue_at_or_above_percent(size_t count, size_t capacity, uint8_t percent)
+{
+    return count * 100 >= capacity * percent;
+}
+
+
+bool queue_at_or_below_percent(size_t count, size_t capacity, uint8_t percent)
+{
+    return count * 100 <= capacity * percent;
+}
+
+
+void update_airdos_downlink_level()
+{
+    if (downlink_limit_kbit_s == 0.0f)
+    {
+        set_airdos_downlink_level(AIRDOS_DOWNLINK_MAX_LEVEL);
+        return;
+    }
+
+    const uint32_t now_ms = millis();
+    const bool queue_high = queue_at_or_above_percent(
+        airdos_queue.size(),
+        ETHERNET_AIRDOS_QUEUE_DEPTH,
+        AIRDOS_DOWNLINK_QUEUE_HIGH_PERCENT
+    );
+
+    if (queue_high && airdos_downlink_level > 0)
+    {
+        airdos_queue_low_since_ms = 0;
+
+        if (airdos_queue_high_since_ms == 0)
+        {
+            airdos_queue_high_since_ms = now_ms;
+        }
+        else if (now_ms - airdos_queue_high_since_ms >=
+            AIRDOS_DOWNLINK_REDUCE_HOLD_MS)
+        {
+            reduce_airdos_downlink_level();
+            airdos_queue_high_since_ms = now_ms;
+        }
+
+        return;
+    }
+
+    airdos_queue_high_since_ms = 0;
+
+    const bool queue_low = queue_at_or_below_percent(
+        airdos_queue.size(),
+        ETHERNET_AIRDOS_QUEUE_DEPTH,
+        AIRDOS_DOWNLINK_QUEUE_LOW_PERCENT
+    );
+
+    if (!queue_low || airdos_downlink_level >= AIRDOS_DOWNLINK_MAX_LEVEL)
+    {
+        airdos_queue_low_since_ms = 0;
+        return;
+    }
+
+    if (airdos_queue_low_since_ms == 0)
+    {
+        airdos_queue_low_since_ms = now_ms;
+        return;
+    }
+
+    if (now_ms - airdos_queue_low_since_ms >=
+        AIRDOS_DOWNLINK_RESTORE_HOLD_MS)
+    {
+        set_airdos_downlink_level(airdos_downlink_level + 1);
+        airdos_queue_low_since_ms = now_ms;
+    }
+}
+
+
+bool send_regular_payload(const char* payload, size_t payload_length)
+{
+    if (payload == nullptr || payload_length == 0) return false;
+    if (payload_length > ETHERNET_UDP_PAYLOAD_MAX) return false;
+    if (!regular_send_ready() || !begin_datagram()) return false;
+
+    udp.write(
+        reinterpret_cast<const uint8_t*>(payload),
+        payload_length
+    );
+
+    if (udp.endPacket() != 1) return false;
+
+    ++telemetry_sequence;
+    charge_downlink(payload_length);
+    return true;
+}
+
+
+bool send_system_packet()
+{
+    if (system_queue.empty()) return false;
+
+    char payload[ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX];
+    const uint32_t next_sequence = telemetry_sequence + 1;
+    const int header_length = snprintf(
+        payload,
+        sizeof(payload),
+        "SEQ,%lu\n",
+        static_cast<unsigned long>(next_sequence)
+    );
+    if (header_length <= 0) return false;
+
+    size_t payload_length = static_cast<size_t>(header_length);
+    size_t lines_added = 0;
+
+    while (lines_added < system_queue.size())
+    {
+        TelemetryLine* line = system_queue.at(lines_added);
+        if (line == nullptr) break;
+
+        const size_t required = line->length + 1;
+        if (payload_length + required > sizeof(payload)) break;
+
+        std::memcpy(payload + payload_length, line->text, line->length);
+        payload_length += line->length;
+        payload[payload_length++] = '\n';
+        ++lines_added;
+    }
+
+    if (lines_added == 0) return false;
+    if (!send_regular_payload(payload, payload_length)) return false;
+
+    system_queue.pop(lines_added);
+    return true;
+}
+
+
+bool send_airdos_packet(const TelemetryLine& line)
+{
+    char payload[ETHERNET_TELEMETRY_LINE_MAX + SEQUENCE_HEADER_MAX];
+    const uint32_t next_sequence = telemetry_sequence + 1;
+    const int header_length = snprintf(
+        payload,
+        sizeof(payload),
+        "SEQ,%lu\n",
+        static_cast<unsigned long>(next_sequence)
+    );
+    if (header_length <= 0) return false;
+
+    size_t payload_length = static_cast<size_t>(header_length);
+    if (payload_length + line.length + 1 > sizeof(payload)) return false;
+
+    std::memcpy(payload + payload_length, line.text, line.length);
+    payload_length += line.length;
+    payload[payload_length++] = '\n';
+
+    return send_regular_payload(payload, payload_length);
 }
 
 
 void flush_telemetry()
 {
-    if (telemetry_length == 0 || !ethernet_link_connected()) return;
+    if (!ethernet_link_connected()) return;
 
-    const uint32_t now_ms = millis();
-    if (now_ms - last_telemetry_send_ms <
-        ETHERNET_TELEMETRY_BATCH_PERIOD_MS)
+    // Housekeeping/system telemetry always has priority over AIRDOS raw data.
+    if (!system_queue.empty())
     {
+        send_system_packet();
         return;
     }
 
-    char sequence_header[32];
-    const uint32_t next_sequence = telemetry_sequence + 1;
-    const int header_length = snprintf(
-        sequence_header,
-        sizeof(sequence_header),
-        "SEQ,%lu\n",
-        static_cast<unsigned long>(next_sequence)
-    );
-    if (header_length <= 0) return;
-
-    const size_t payload_length =
-        static_cast<size_t>(header_length) + telemetry_length;
-    if (payload_length > ETHERNET_UDP_PAYLOAD_MAX ||
-        !reserve_downlink(payload_length, false) ||
-        !begin_datagram())
+    // A level reduction can make already queued AIRDOS lines ineligible.
+    // Remove them before selecting the next line to transmit.
+    while (!airdos_queue.empty())
     {
-        return;
+        TelemetryLine* line = airdos_queue.front();
+        if (line == nullptr) return;
+
+        if (airdos_sensor_selected(line->sensor_id)) break;
+
+        airdos_queue.pop();
+        ++airdos_suppressed_count;
     }
 
-    udp.write(
-        reinterpret_cast<const uint8_t*>(sequence_header),
-        static_cast<size_t>(header_length)
-    );
-    udp.write(
-        reinterpret_cast<const uint8_t*>(telemetry_buffer),
-        telemetry_length
-    );
-
-    if (udp.endPacket() == 1)
+    TelemetryLine* line = airdos_queue.front();
+    if (line != nullptr && send_airdos_packet(*line))
     {
-        telemetry_sequence = next_sequence;
-        last_telemetry_send_ms = now_ms;
-        reset_telemetry_buffer();
+        airdos_queue.pop();
     }
 }
 
@@ -234,9 +515,13 @@ bool ethernet_link_init()
     Ethernet.begin(mac, local_ip, dns, gateway, subnet);
 
     reset_receive_buffer();
-    reset_telemetry_buffer();
-    reset_downlink_bucket();
-    last_telemetry_send_ms = millis();
+    reset_telemetry_queues();
+    reset_rate_scheduler();
+    set_airdos_downlink_level(AIRDOS_DOWNLINK_MAX_LEVEL);
+
+    telemetry_sequence = 0;
+    telemetry_drop_count = 0;
+    airdos_suppressed_count = 0;
 
     return udp.begin(ETHERNET_UDP_PORT) == 1;
 }
@@ -249,7 +534,7 @@ void ethernet_link_update()
             ETHERNET_GROUND_STATION_TIMEOUT_MS)
     {
         ground_station_known = false;
-        reset_telemetry_buffer();
+        reset_telemetry_queues();
     }
 
     if (!command_ready)
@@ -289,6 +574,7 @@ void ethernet_link_update()
         }
     }
 
+    update_airdos_downlink_level();
     flush_telemetry();
 }
 
@@ -316,18 +602,50 @@ bool ethernet_link_send_line(const char* message)
 {
     if (!ethernet_link_connected() || message == nullptr) return false;
 
-    const size_t message_length = std::strlen(message);
-    const size_t required = message_length + 1;
-    if (required >
-        ETHERNET_UDP_PAYLOAD_MAX - SEQUENCE_HEADER_MAX - telemetry_length)
+    if (system_queue.push(message)) return true;
+
+    ++telemetry_drop_count;
+
+    // If system telemetry cannot be queued, remove AIRDOS load immediately.
+    if (downlink_limit_kbit_s != 0.0f)
     {
-        return false;
+        reduce_airdos_downlink_level();
     }
 
-    std::memcpy(telemetry_buffer + telemetry_length, message, message_length);
-    telemetry_length += message_length;
-    telemetry_buffer[telemetry_length++] = '\n';
-    return true;
+    return false;
+}
+
+
+bool ethernet_link_send_airdos_line(uint8_t sensor_id, const char* message)
+{
+    if (!ethernet_link_connected() || message == nullptr) return false;
+
+    if (!airdos_sensor_selected(sensor_id))
+    {
+        ++airdos_suppressed_count;
+        return true;
+    }
+
+    if (airdos_queue.push(message, sensor_id)) return true;
+
+    // Queue pressure reached the hard limit before the hysteresis timer could
+    // react. Drop one complete priority level immediately and retry this line
+    // if the sensor is still selected afterwards.
+    if (downlink_limit_kbit_s != 0.0f && airdos_downlink_level > 0)
+    {
+        reduce_airdos_downlink_level();
+
+        if (!airdos_sensor_selected(sensor_id))
+        {
+            ++airdos_suppressed_count;
+            return true;
+        }
+
+        if (airdos_queue.push(message, sensor_id)) return true;
+    }
+
+    ++telemetry_drop_count;
+    return false;
 }
 
 
@@ -349,8 +667,16 @@ bool ethernet_link_set_downlink_limit(float limit_kbit_s)
         return false;
     }
 
+    // The ground station periodically refreshes its saved setting. Do not
+    // reset the automatic AIRDOS level when the requested limit is unchanged.
+    if (limit_kbit_s == downlink_limit_kbit_s) return true;
+
     downlink_limit_kbit_s = limit_kbit_s;
-    reset_downlink_bucket();
+    reset_rate_scheduler();
+
+    // Re-evaluate the full science downlink after an actual operator change.
+    // Queue pressure will step it down again if needed.
+    set_airdos_downlink_level(AIRDOS_DOWNLINK_MAX_LEVEL);
     return true;
 }
 
@@ -358,4 +684,40 @@ bool ethernet_link_set_downlink_limit(float limit_kbit_s)
 float ethernet_link_get_downlink_limit()
 {
     return downlink_limit_kbit_s;
+}
+
+
+uint8_t ethernet_link_get_airdos_downlink_level()
+{
+    return airdos_downlink_level;
+}
+
+
+uint8_t ethernet_link_get_airdos_selected_count()
+{
+    return airdos_downlink_level * AIRDOS_SAMPLE_GROUP_COUNT;
+}
+
+
+uint32_t ethernet_link_get_telemetry_drop_count()
+{
+    return telemetry_drop_count;
+}
+
+
+uint32_t ethernet_link_get_airdos_suppressed_count()
+{
+    return airdos_suppressed_count;
+}
+
+
+uint16_t ethernet_link_get_system_queue_size()
+{
+    return static_cast<uint16_t>(system_queue.size());
+}
+
+
+uint16_t ethernet_link_get_airdos_queue_size()
+{
+    return static_cast<uint16_t>(airdos_queue.size());
 }

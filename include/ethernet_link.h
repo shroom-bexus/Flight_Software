@@ -43,11 +43,27 @@ bool ethernet_link_read_line(
 
 
 /**
- * @brief Queue one telemetry line for the next UDP batch.
+ * @brief Queue one normal system-telemetry line.
  *
- * @return true if the line was added to the current batch.
+ * System telemetry is transmitted before AIRDOS raw data.
+ *
+ * @return true if the line was queued.
  */
 bool ethernet_link_send_line(
+    const char* message
+);
+
+
+/**
+ * @brief Queue one AIRDOS raw-data line using the configured sample priority.
+ *
+ * The current automatic AIRDOS downlink level may intentionally suppress the
+ * line. Local SD logging is handled separately and is not affected.
+ *
+ * @return true if the line was queued or intentionally suppressed.
+ */
+bool ethernet_link_send_airdos_line(
+    uint8_t sensor_id,
     const char* message
 );
 
@@ -75,6 +91,24 @@ bool ethernet_link_set_downlink_limit(float limit_kbit_s);
 
 /** @brief Return the active estimated wire downlink limit in kbit/s. */
 float ethernet_link_get_downlink_limit();
+
+/** @brief Return the current automatic AIRDOS downlink level (0-3). */
+uint8_t ethernet_link_get_airdos_downlink_level();
+
+/** @brief Return the configured AIRDOS count selected by the current level. */
+uint8_t ethernet_link_get_airdos_selected_count();
+
+/** @brief Return telemetry lines lost because a queue/line limit was exceeded. */
+uint32_t ethernet_link_get_telemetry_drop_count();
+
+/** @brief Return AIRDOS lines intentionally suppressed by the priority policy. */
+uint32_t ethernet_link_get_airdos_suppressed_count();
+
+/** @brief Return current normal system-telemetry queue occupancy. */
+uint16_t ethernet_link_get_system_queue_size();
+
+/** @brief Return current AIRDOS raw-data queue occupancy. */
+uint16_t ethernet_link_get_airdos_queue_size();
 
 
 #endif // FLIGHT_SOFTWARE_ETHERNET_LINK_H

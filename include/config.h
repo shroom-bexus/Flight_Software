@@ -135,6 +135,37 @@ constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {0};
 #define AIRDOS_LEGACY_SERIAL Serial7
 #endif
 
+// AIRDOS raw-data downlink priority
+//
+// Each row is one sample group. Within a row, the first sensor has the
+// highest downlink priority and the third sensor has the lowest priority.
+// Change only this table if the physical sample/AIRDOS assignment changes.
+// Every AIRDOS sensor ID 1-9 should occur exactly once.
+//
+// Automatic downlink levels:
+//   level 3 -> all three entries from every row = 9 AIRDOS
+//   level 2 -> first two entries from every row  = 6 AIRDOS
+//   level 1 -> first entry from every row         = 3 AIRDOS
+//   level 0 -> no AIRDOS raw-data downlink
+//
+// Local SD logging is not affected by these levels.
+constexpr uint8_t AIRDOS_SAMPLE_GROUP_COUNT = 3;
+constexpr uint8_t AIRDOS_SENSORS_PER_GROUP = 3;
+constexpr uint8_t AIRDOS_DOWNLINK_MAX_LEVEL = AIRDOS_SENSORS_PER_GROUP;
+constexpr uint8_t AIRDOS_DOWNLINK_PRIORITY
+    [AIRDOS_SAMPLE_GROUP_COUNT][AIRDOS_SENSORS_PER_GROUP] =
+{
+    {1, 2, 3},
+    {4, 5, 6},
+    {7, 8, 9}
+};
+
+// Queue-pressure hysteresis for automatic 9 -> 6 -> 3 -> 0 selection.
+constexpr uint8_t AIRDOS_DOWNLINK_QUEUE_HIGH_PERCENT = 50;
+constexpr uint8_t AIRDOS_DOWNLINK_QUEUE_LOW_PERCENT = 10;
+constexpr uint32_t AIRDOS_DOWNLINK_REDUCE_HOLD_MS = 1500;
+constexpr uint32_t AIRDOS_DOWNLINK_RESTORE_HOLD_MS = 30000;
+
 // Ethernet
 constexpr uint8_t ETHERNET_LOCAL_IP[] = {172, 16, 18, 131};
 constexpr uint8_t ETHERNET_SUBNET[] = {255, 255, 255, 0}; // TODO: confirm with SSC
@@ -143,7 +174,16 @@ constexpr uint8_t ETHERNET_DNS[] = {0, 0, 0, 0};
 constexpr uint16_t ETHERNET_UDP_PORT = 5000;
 constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
 constexpr size_t ETHERNET_UDP_PAYLOAD_MAX = 1200;
-constexpr uint32_t ETHERNET_TELEMETRY_BATCH_PERIOD_MS = 1000;
+
+// Telemetry is queued line-by-line. Small system lines may share a compact
+// UDP packet, while each AIRDOS raw line stays in its own packet. This avoids
+// the old one-second mega-batches without wasting excessive Ethernet overhead.
+// System telemetry always has priority over AIRDOS raw data.
+constexpr size_t ETHERNET_TELEMETRY_LINE_MAX = 384;
+constexpr size_t ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX = 256;
+constexpr size_t ETHERNET_SYSTEM_QUEUE_DEPTH = 32;
+constexpr size_t ETHERNET_AIRDOS_QUEUE_DEPTH = 48;
+
 constexpr uint32_t ETHERNET_GROUND_STATION_TIMEOUT_MS = 60000;
 // 0 disables the limiter until the ground station applies its saved setting.
 constexpr float ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S = 0.0f;

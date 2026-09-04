@@ -156,7 +156,7 @@ void telemetry_send_airdos(uint8_t sensor_id, const char* data)
     );
 
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(message)) return;
-    ethernet_link_send_line(message);
+    ethernet_link_send_airdos_line(sensor_id, message);
 #else
     (void)sensor_id;
     (void)data;
@@ -260,5 +260,22 @@ void telemetry_update()
         ethernet_link_send_line(message);
     }
 #endif
+
+    // Confirm the limiter state and AIRDOS selection policy at the ground
+    // station. Counts are cumulative since the current flight-computer boot.
+    snprintf(
+        message,
+        sizeof(message),
+        "DOWNLINK,%lu,%.2f,%u,%u,%lu,%lu,%u,%u",
+        static_cast<unsigned long>(time_ms),
+        ethernet_link_get_downlink_limit(),
+        ethernet_link_get_airdos_downlink_level(),
+        ethernet_link_get_airdos_selected_count(),
+        static_cast<unsigned long>(ethernet_link_get_telemetry_drop_count()),
+        static_cast<unsigned long>(ethernet_link_get_airdos_suppressed_count()),
+        static_cast<unsigned int>(ethernet_link_get_system_queue_size()),
+        static_cast<unsigned int>(ethernet_link_get_airdos_queue_size())
+    );
+    ethernet_link_send_line(message);
 #endif
 }
