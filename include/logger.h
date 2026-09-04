@@ -7,9 +7,9 @@
 
 
 /**
- * @brief Initialize the SD card and open all enabled log files.
+ * @brief Initialize both storage devices and open all enabled log files.
  *
- * @return true if all enabled log files were opened successfully.
+ * @return true if at least one complete storage copy is available.
  */
 bool logger_init();
 
@@ -84,14 +84,35 @@ void logger_log_airdos(
 
 
 /**
- * @brief Check whether the SD card and all required log files are ready.
+ * @brief Check whether all enabled storage devices are ready.
  */
 bool logger_is_ready();
 
 
+/** @brief Check the built-in Teensy SD card independently. */
+bool logger_internal_sd_is_ready();
+
+
+/** @brief Check the soldered XTSD backup independently. */
+bool logger_backup_sd_is_ready();
+
+
 /**
- * @brief Return the number of logger initialization errors.
+ * @brief Return the combined initialization and write error count.
  */
 uint32_t logger_get_error_count();
+
+
+/** @brief Return errors belonging to the built-in SD card. */
+uint32_t logger_get_internal_sd_error_count();
+
+
+/** @brief Return errors belonging to the XTSD backup. */
+uint32_t logger_get_backup_sd_error_count();
+
+
+/** @brief Return the latest XTSD/SdFat error code and error data. */
+uint8_t logger_get_backup_sd_error_code();
+uint8_t logger_get_backup_sd_error_data();
 
 #endif // FLIGHT_SOFTWARE_LOGGER_H

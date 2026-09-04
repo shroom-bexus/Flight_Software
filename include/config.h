@@ -25,6 +25,7 @@
 #if FLIGHT_PRIMARY
 #define ENABLE_ETHERNET        true
 #define ENABLE_SD_LOGGING      true
+#define ENABLE_BACKUP_SD_LOGGING true
 #define ENABLE_HEATERS         true
 #define ENABLE_THERMAL_CONTROL true
 #define ENABLE_MAX31865        true
@@ -35,6 +36,7 @@
 #else
 #define ENABLE_ETHERNET        false
 #define ENABLE_SD_LOGGING      true
+#define ENABLE_BACKUP_SD_LOGGING true
 #define ENABLE_HEATERS         false
 #define ENABLE_THERMAL_CONTROL false
 #define ENABLE_MAX31865        false
@@ -51,6 +53,25 @@ constexpr uint32_t WSEN_PADS_SAMPLE_PERIOD_MS = 2000;
 constexpr uint32_t WSEN_HIDS_SAMPLE_PERIOD_MS = 4000;
 constexpr uint32_t WSEN_ISDS_SAMPLE_PERIOD_MS = 10;
 constexpr uint32_t HEALTH_TELEMETRY_PERIOD_MS = 5000;
+
+// Storage
+// The built-in Teensy 4.1 card uses SDIO. The soldered Adafruit XTSD backup
+// uses a separate SPI connection shown in the PCB schematic.
+constexpr uint32_t BACKUP_SD_SPI_CLOCK_MHZ = 4;
+
+#if FLIGHT_PRIMARY
+constexpr uint8_t BACKUP_SD_CS_PIN = 37;
+constexpr uint8_t BACKUP_SD_MOSI_PIN = 26;
+constexpr uint8_t BACKUP_SD_MISO_PIN = 39;
+constexpr uint8_t BACKUP_SD_SCK_PIN = 27;
+#define BACKUP_SD_SPI_BUS SPI1
+#else
+constexpr uint8_t BACKUP_SD_CS_PIN = 10;
+constexpr uint8_t BACKUP_SD_MOSI_PIN = 11;
+constexpr uint8_t BACKUP_SD_MISO_PIN = 12;
+constexpr uint8_t BACKUP_SD_SCK_PIN = 13;
+#define BACKUP_SD_SPI_BUS SPI
+#endif
 
 // Shared I2C bus
 constexpr uint32_t I2C_CLOCK_HZ = 400000;

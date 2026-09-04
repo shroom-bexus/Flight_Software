@@ -5,80 +5,314 @@
 #include "config.h"
 #include "rtc.h"
 
-#if ENABLE_SD_LOGGING
+#if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
 #include <SD.h>
+#include <SPI.h>
 #endif
 
 
 namespace
 {
+#if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
+
+    bool internal_sd_ready = false;
+    bool backup_sd_ready = false;
+
+    uint32_t internal_sd_error_count = 0;
+    uint32_t backup_sd_error_count = 0;
+    uint32_t last_flush_time = 0;
+
+
+#if ENABLE_BACKUP_SD_LOGGING
+    // Keep the global SD object assigned to the built-in SDIO card. The
+    // soldered XTSD backup therefore gets its own independent SdFs instance.
+    SdFs backup_sd;
+#endif
+
+
+    void disable_internal_sd();
+    void disable_backup_sd();
+
+
+    /**
+     * @brief One logical log file mirrored to both storage devices.
+     *
+     * A failed destination is disabled independently. The other destination
+     * continues to receive the complete byte stream.
+     */
+    class MirroredLogFile : public Print
+    {
+    public:
+        bool open(const char* filename, const char* header)
+        {
 #if ENABLE_SD_LOGGING
+            if (internal_sd_ready)
+            {
+                internal_file = SD.open(filename, FILE_WRITE);
+
+                if (!internal_file ||
+                    !write_internal_header_if_empty(header))
+                {
+                    ++internal_sd_error_count;
+                    internal_sd_ready = false;
+                    internal_file.close();
+                }
+            }
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+            if (backup_sd_ready)
+            {
+                backup_file = backup_sd.open(
+                    filename,
+                    O_RDWR | O_CREAT | O_AT_END
+                );
+
+                if (!backup_file ||
+                    !write_backup_header_if_empty(header))
+                {
+                    ++backup_sd_error_count;
+                    backup_sd_ready = false;
+                    backup_file.close();
+                }
+            }
+#endif
+
+            return static_cast<bool>(*this);
+        }
+
+
+        size_t write(uint8_t value) override
+        {
+            return write(&value, 1);
+        }
+
+
+        size_t write(const uint8_t* buffer, size_t size) override
+        {
+            bool written = false;
+
+#if ENABLE_SD_LOGGING
+            if (internal_sd_ready && internal_file)
+            {
+                if (internal_file.write(buffer, size) == size)
+                {
+                    written = true;
+                }
+                else
+                {
+                    disable_internal_sd();
+                }
+            }
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+            if (backup_sd_ready && backup_file)
+            {
+                if (backup_file.write(buffer, size) == size)
+                {
+                    written = true;
+                }
+                else
+                {
+                    disable_backup_sd();
+                }
+            }
+#endif
+
+            return written ? size : 0;
+        }
+
+
+        void flush()
+        {
+#if ENABLE_SD_LOGGING
+            if (internal_sd_ready && internal_file)
+            {
+                internal_file.flush();
+                if (internal_file.getWriteError()) disable_internal_sd();
+            }
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+            if (backup_sd_ready && backup_file)
+            {
+                if (!backup_file.sync() || backup_file.getWriteError())
+                {
+                    disable_backup_sd();
+                }
+            }
+#endif
+        }
+
+
+        void close_internal()
+        {
+#if ENABLE_SD_LOGGING
+            internal_file.close();
+#endif
+        }
+
+
+        void close_backup()
+        {
+#if ENABLE_BACKUP_SD_LOGGING
+            backup_file.close();
+#endif
+        }
+
+
+        explicit operator bool()
+        {
+            bool open = false;
+
+#if ENABLE_SD_LOGGING
+            open = open || (internal_sd_ready && internal_file);
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+            open = open || (backup_sd_ready && backup_file);
+#endif
+
+            return open;
+        }
+
+
+    private:
+#if ENABLE_SD_LOGGING
+        File internal_file;
+
+        bool write_internal_header_if_empty(const char* header)
+        {
+            if (internal_file.size() != 0) return true;
+
+            internal_file.println(header);
+            internal_file.flush();
+            return !internal_file.getWriteError();
+        }
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+        FsFile backup_file;
+
+        bool write_backup_header_if_empty(const char* header)
+        {
+            if (backup_file.size() != 0) return true;
+
+            backup_file.println(header);
+            return backup_file.sync() && !backup_file.getWriteError();
+        }
+#endif
+    };
+
 
     // Log files
 
 #if ENABLE_MAX31865
-    File max31865_file;
+    MirroredLogFile max31865_file;
 #endif
 
 #if ENABLE_WSEN_PADS
-    File wsen_pads_file;
+    MirroredLogFile wsen_pads_file;
 #endif
 
 #if ENABLE_WSEN_HIDS
-    File wsen_hids_file;
+    MirroredLogFile wsen_hids_file;
 #endif
 
 #if ENABLE_WSEN_ISDS
-    File wsen_isds_file;
+    MirroredLogFile wsen_isds_file;
 #endif
 
 #if ENABLE_AIRDOS
-    File airdos_file;
+    MirroredLogFile airdos_file;
 #endif
 
 
-    uint32_t last_flush_time = 0;
-
-    bool logger_ready = false;
-    uint32_t logger_error_count = 0;
-
-
-    // Helper functions
-
-    /**
- * @brief Open a log file and add the CSV header if the file is empty.
- */
-    bool open_log_file(
-        File& file,
-        const char* filename,
-        const char* header
-    )
+    void close_internal_files()
     {
-        file = SD.open(filename, FILE_WRITE);
+#if ENABLE_MAX31865
+        max31865_file.close_internal();
+#endif
+#if ENABLE_WSEN_PADS
+        wsen_pads_file.close_internal();
+#endif
+#if ENABLE_WSEN_HIDS
+        wsen_hids_file.close_internal();
+#endif
+#if ENABLE_WSEN_ISDS
+        wsen_isds_file.close_internal();
+#endif
+#if ENABLE_AIRDOS
+        airdos_file.close_internal();
+#endif
+    }
 
-        if (!file)
-        {
-            return false;
-        }
 
-        // Only write the header when creating a new file.
-        if (file.size() == 0)
-        {
-            file.println(header);
-            file.flush();
-        }
+    void close_backup_files()
+    {
+#if ENABLE_MAX31865
+        max31865_file.close_backup();
+#endif
+#if ENABLE_WSEN_PADS
+        wsen_pads_file.close_backup();
+#endif
+#if ENABLE_WSEN_HIDS
+        wsen_hids_file.close_backup();
+#endif
+#if ENABLE_WSEN_ISDS
+        wsen_isds_file.close_backup();
+#endif
+#if ENABLE_AIRDOS
+        airdos_file.close_backup();
+#endif
+    }
 
-        return true;
+
+    void disable_internal_sd()
+    {
+#if ENABLE_SD_LOGGING
+        if (!internal_sd_ready) return;
+
+        ++internal_sd_error_count;
+        internal_sd_ready = false;
+        close_internal_files();
+#endif
+    }
+
+
+    void disable_backup_sd()
+    {
+#if ENABLE_BACKUP_SD_LOGGING
+        if (!backup_sd_ready) return;
+
+        ++backup_sd_error_count;
+        backup_sd_ready = false;
+        close_backup_files();
+#endif
     }
 
 
     /**
- * @brief Write the timestamp prefix shared by all log entries.
- *
- * Format:
- * UTC timestamp,milliseconds since boot,
- */
-    void write_timestamp(File& file)
+     * @brief Open a mirrored log file and add its CSV header when empty.
+     */
+    void open_log_file(
+        MirroredLogFile& file,
+        const char* filename,
+        const char* header
+    )
+    {
+        file.open(filename, header);
+    }
+
+
+    /**
+     * @brief Write the timestamp prefix shared by all log entries.
+     *
+     * Format:
+     * UTC timestamp,milliseconds since boot,
+     */
+    void write_timestamp(MirroredLogFile& file)
     {
         char timestamp[24];
 
@@ -95,9 +329,9 @@ namespace
 
 
     /**
- * @brief Flush a file if it is currently open.
- */
-    void flush_file(File& file)
+     * @brief Flush a mirrored file if at least one copy is open.
+     */
+    void flush_file(MirroredLogFile& file)
     {
         if (file)
         {
@@ -105,7 +339,7 @@ namespace
         }
     }
 
-#endif // ENABLE_SD_LOGGING
+#endif // ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
 } // namespace
 
 
@@ -113,99 +347,107 @@ namespace
 
 bool logger_init()
 {
-    logger_ready = false;
-    logger_error_count = 0;
-
-#if !ENABLE_SD_LOGGING
+#if !ENABLE_SD_LOGGING && !ENABLE_BACKUP_SD_LOGGING
 
     return true;
 
 #else
 
-    if (!SD.begin(BUILTIN_SDCARD))
+    internal_sd_ready = false;
+    backup_sd_ready = false;
+    internal_sd_error_count = 0;
+    backup_sd_error_count = 0;
+
+
+#if ENABLE_SD_LOGGING
+
+    internal_sd_ready = SD.begin(BUILTIN_SDCARD);
+
+    if (!internal_sd_ready)
     {
-        ++logger_error_count;
-        return false;
+        ++internal_sd_error_count;
     }
 
-    bool success = true;
+#endif
+
+
+#if ENABLE_BACKUP_SD_LOGGING
+
+    // Explicit pin selection documents and enforces the PCB routing.
+    BACKUP_SD_SPI_BUS.setMOSI(BACKUP_SD_MOSI_PIN);
+    BACKUP_SD_SPI_BUS.setMISO(BACKUP_SD_MISO_PIN);
+    BACKUP_SD_SPI_BUS.setSCK(BACKUP_SD_SCK_PIN);
+
+    // Keep the XTSD deselected until SdFat starts the SPI transaction.
+    pinMode(BACKUP_SD_CS_PIN, OUTPUT);
+    digitalWrite(BACKUP_SD_CS_PIN, HIGH);
+
+    backup_sd_ready = backup_sd.begin(
+        SdSpiConfig(
+            BACKUP_SD_CS_PIN,
+            SHARED_SPI,
+            SD_SCK_MHZ(BACKUP_SD_SPI_CLOCK_MHZ),
+            &BACKUP_SD_SPI_BUS
+        )
+    );
+
+    if (!backup_sd_ready)
+    {
+        ++backup_sd_error_count;
+    }
+
+#endif
 
 
 #if ENABLE_MAX31865
-
-    if (!open_log_file(
+    open_log_file(
         max31865_file,
         "max31865.csv",
-        "timestamp,time_ms,sensor,temperature_K"))
-    {
-        ++logger_error_count;
-        success = false;
-    }
-
+        "timestamp,time_ms,sensor,temperature_K"
+    );
 #endif
-
 
 #if ENABLE_WSEN_PADS
-
-    if (!open_log_file(
+    open_log_file(
         wsen_pads_file,
         "wsen_pads.csv",
-        "timestamp,time_ms,temperature_K,pressure_Pa"))
-    {
-        ++logger_error_count;
-        success = false;
-    }
-
+        "timestamp,time_ms,temperature_K,pressure_Pa"
+    );
 #endif
-
 
 #if ENABLE_WSEN_HIDS
-
-    if (!open_log_file(
+    open_log_file(
         wsen_hids_file,
         "wsen_hids.csv",
-        "timestamp,time_ms,temperature_K,humidity_percent"))
-    {
-        ++logger_error_count;
-        success = false;
-    }
-
+        "timestamp,time_ms,temperature_K,humidity_percent"
+    );
 #endif
-
 
 #if ENABLE_WSEN_ISDS
-
-    if (!open_log_file(
+    open_log_file(
         wsen_isds_file,
         "wsen_isds.csv",
-        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"))
-    {
-        ++logger_error_count;
-        success = false;
-    }
-
+        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"
+    );
 #endif
-
 
 #if ENABLE_AIRDOS
-
-    if (!open_log_file(
+    open_log_file(
         airdos_file,
         "airdos.csv",
-        "timestamp,time_ms,sensor,data"))
-    {
-        ++logger_error_count;
-        success = false;
-    }
-
+        "timestamp,time_ms,sensor,data"
+    );
 #endif
 
-    logger_ready = success;
-    return success;
+    // If opening one required file failed, discard that incomplete copy while
+    // keeping the other storage device operational.
+    if (!internal_sd_ready) close_internal_files();
+    if (!backup_sd_ready) close_backup_files();
+
+    return internal_sd_ready || backup_sd_ready;
 
 #endif
 }
-
 
 // MAX31865
 
@@ -214,7 +456,7 @@ void logger_log_max31865(
     float temperature_k
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_MAX31865
+#if (ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING) && ENABLE_MAX31865
 
     if (!max31865_file)
     {
@@ -243,7 +485,7 @@ void logger_log_wsen_pads(
     float pressure_pa
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_PADS
+#if (ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING) && ENABLE_WSEN_PADS
 
     if (!wsen_pads_file)
     {
@@ -272,7 +514,7 @@ void logger_log_wsen_hids(
     float humidity_percent
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_HIDS
+#if (ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING) && ENABLE_WSEN_HIDS
 
     if (!wsen_hids_file)
     {
@@ -305,7 +547,7 @@ void logger_log_wsen_isds(
     float gyro_z
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_WSEN_ISDS
+#if (ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING) && ENABLE_WSEN_ISDS
 
     if (!wsen_isds_file)
     {
@@ -342,26 +584,26 @@ void logger_log_wsen_isds(
 // AIRDOS
 
 void logger_log_airdos(
-    uint8_t sensor_index,
+    uint8_t sensor_id,
     const char* data
 )
 {
-#if ENABLE_SD_LOGGING && ENABLE_AIRDOS
+#if (ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING) && ENABLE_AIRDOS
 
-    if (!airdos_file)
+    if (!airdos_file || data == nullptr)
     {
         return;
     }
 
     write_timestamp(airdos_file);
 
-    airdos_file.print(sensor_index);
+    airdos_file.print(sensor_id);
     airdos_file.print(',');
     airdos_file.println(data);
 
 #else
 
-    (void)sensor_index;
+    (void)sensor_id;
     (void)data;
 
 #endif
@@ -372,7 +614,7 @@ void logger_log_airdos(
 
 void logger_update()
 {
-#if ENABLE_SD_LOGGING
+#if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
 
     const uint32_t current_time = millis();
 
@@ -408,13 +650,68 @@ void logger_update()
 #endif
 }
 
+
 bool logger_is_ready()
 {
-    return logger_ready;
+    bool ready = true;
+
+#if ENABLE_SD_LOGGING
+    ready = ready && internal_sd_ready;
+#endif
+
+#if ENABLE_BACKUP_SD_LOGGING
+    ready = ready && backup_sd_ready;
+#endif
+
+    return ready;
+}
+
+
+bool logger_internal_sd_is_ready()
+{
+    return internal_sd_ready;
+}
+
+
+bool logger_backup_sd_is_ready()
+{
+    return backup_sd_ready;
 }
 
 
 uint32_t logger_get_error_count()
 {
-    return logger_error_count;
+    return internal_sd_error_count + backup_sd_error_count;
+}
+
+
+uint32_t logger_get_internal_sd_error_count()
+{
+    return internal_sd_error_count;
+}
+
+
+uint32_t logger_get_backup_sd_error_count()
+{
+    return backup_sd_error_count;
+}
+
+
+uint8_t logger_get_backup_sd_error_code()
+{
+#if ENABLE_BACKUP_SD_LOGGING
+    return backup_sd.sdErrorCode();
+#else
+    return 0;
+#endif
+}
+
+
+uint8_t logger_get_backup_sd_error_data()
+{
+#if ENABLE_BACKUP_SD_LOGGING
+    return backup_sd.sdErrorData();
+#else
+    return 0;
+#endif
 }

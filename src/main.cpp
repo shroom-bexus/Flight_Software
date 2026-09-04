@@ -63,6 +63,16 @@ void print_init_result(const char* name, bool success)
     Serial.println(success ? ": OK" : ": FAILED");
 }
 
+void print_backup_sd_error()
+{
+#if ENABLE_BACKUP_SD_LOGGING
+    Serial.print("Backup XTSD error code: 0x");
+    Serial.print(logger_get_backup_sd_error_code(), HEX);
+    Serial.print(", data: 0x");
+    Serial.println(logger_get_backup_sd_error_data(), HEX);
+#endif
+}
+
 void update_ethernet()
 {
 #if ENABLE_ETHERNET
@@ -206,8 +216,15 @@ void setup()
 
     print_init_result("RTC", rtc_init());
 
+#if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
+    logger_init();
 #if ENABLE_SD_LOGGING
-    print_init_result("SD logger", logger_init());
+    print_init_result("Internal SD", logger_internal_sd_is_ready());
+#endif
+#if ENABLE_BACKUP_SD_LOGGING
+    print_init_result("Backup XTSD", logger_backup_sd_is_ready());
+    if (!logger_backup_sd_is_ready()) print_backup_sd_error();
+#endif
 #endif
 #if ENABLE_HEATERS
     heater_init();
