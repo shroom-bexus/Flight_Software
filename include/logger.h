@@ -82,11 +82,11 @@ void logger_log_wsen_isds(
 /**
  * @brief Log one raw AIRDOS UART message.
  *
- * @param sensor_index AIRDOS sensor channel, starting at 0.
+ * @param sensor_id Configured AIRDOS sensor ID (not the UART channel index).
  * @param data Received UART message.
  */
 void logger_log_airdos(
-    uint8_t sensor_index,
+    uint8_t sensor_id,
     const char* data
 );
 

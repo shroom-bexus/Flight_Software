@@ -245,43 +245,50 @@ namespace
 #endif
 
 
-    void close_internal_files()
+    // Register each enabled log once. All lifecycle operations use this order.
+    struct LogEntry
+    {
+        MirroredLogFile* file;
+        const char* filename;
+        const char* header;
+    };
+
+    const LogEntry log_files[] =
     {
 #if ENABLE_MAX31865
-        max31865_file.close_internal();
+        {&max31865_file, "max31865.csv",
+         "timestamp,time_ms,sensor,temperature_K"},
 #endif
 #if ENABLE_WSEN_PADS
-        wsen_pads_file.close_internal();
+        {&wsen_pads_file, "wsen_pads.csv",
+         "timestamp,time_ms,temperature_K,pressure_Pa"},
 #endif
 #if ENABLE_WSEN_HIDS
-        wsen_hids_file.close_internal();
+        {&wsen_hids_file, "wsen_hids.csv",
+         "timestamp,time_ms,temperature_K,humidity_percent"},
 #endif
 #if ENABLE_WSEN_ISDS
-        wsen_isds_file.close_internal();
+        {&wsen_isds_file, "wsen_isds.csv",
+         "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"},
 #endif
 #if ENABLE_AIRDOS
-        airdos_file.close_internal();
+        {&airdos_file, "airdos.csv",
+         "timestamp,time_ms,sensor,data"},
 #endif
-    }
+        // Sentinel also permits builds with no enabled sensors.
+        {nullptr, nullptr, nullptr}
+    };
 
+    void close_internal_files()
+    {
+        for (const LogEntry& log : log_files)
+            if (log.file) log.file->close_internal();
+    }
 
     void close_backup_files()
     {
-#if ENABLE_MAX31865
-        max31865_file.close_backup();
-#endif
-#if ENABLE_WSEN_PADS
-        wsen_pads_file.close_backup();
-#endif
-#if ENABLE_WSEN_HIDS
-        wsen_hids_file.close_backup();
-#endif
-#if ENABLE_WSEN_ISDS
-        wsen_isds_file.close_backup();
-#endif
-#if ENABLE_AIRDOS
-        airdos_file.close_backup();
-#endif
+        for (const LogEntry& log : log_files)
+            if (log.file) log.file->close_backup();
     }
 
 
@@ -310,19 +317,6 @@ namespace
 
 
     /**
-     * @brief Open a mirrored log file and add its CSV header when empty.
-     */
-    void open_log_file(
-        MirroredLogFile& file,
-        const char* filename,
-        const char* header
-    )
-    {
-        file.open(filename, header);
-    }
-
-
-    /**
      * @brief Write the timestamp prefix shared by all log entries.
      *
      * Format:
@@ -344,55 +338,16 @@ namespace
     }
 
 
-    /**
-     * @brief Flush a mirrored file if at least one copy is open.
-     */
-    void flush_file(MirroredLogFile& file)
-    {
-        if (file)
-        {
-            file.flush();
-        }
-    }
-
-
     void flush_all_files()
     {
-#if ENABLE_MAX31865
-        flush_file(max31865_file);
-#endif
-#if ENABLE_WSEN_PADS
-        flush_file(wsen_pads_file);
-#endif
-#if ENABLE_WSEN_HIDS
-        flush_file(wsen_hids_file);
-#endif
-#if ENABLE_WSEN_ISDS
-        flush_file(wsen_isds_file);
-#endif
-#if ENABLE_AIRDOS
-        flush_file(airdos_file);
-#endif
+        for (const LogEntry& log : log_files)
+            if (log.file && *log.file) log.file->flush();
     }
-
 
     void close_all_files()
     {
-#if ENABLE_MAX31865
-        max31865_file.close();
-#endif
-#if ENABLE_WSEN_PADS
-        wsen_pads_file.close();
-#endif
-#if ENABLE_WSEN_HIDS
-        wsen_hids_file.close();
-#endif
-#if ENABLE_WSEN_ISDS
-        wsen_isds_file.close();
-#endif
-#if ENABLE_AIRDOS
-        airdos_file.close();
-#endif
+        for (const LogEntry& log : log_files)
+            if (log.file) log.file->close();
     }
 
 #endif // ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
@@ -456,45 +411,10 @@ bool logger_init()
 #endif
 
 
-#if ENABLE_MAX31865
-    open_log_file(
-        max31865_file,
-        "max31865.csv",
-        "timestamp,time_ms,sensor,temperature_K"
-    );
-#endif
-
-#if ENABLE_WSEN_PADS
-    open_log_file(
-        wsen_pads_file,
-        "wsen_pads.csv",
-        "timestamp,time_ms,temperature_K,pressure_Pa"
-    );
-#endif
-
-#if ENABLE_WSEN_HIDS
-    open_log_file(
-        wsen_hids_file,
-        "wsen_hids.csv",
-        "timestamp,time_ms,temperature_K,humidity_percent"
-    );
-#endif
-
-#if ENABLE_WSEN_ISDS
-    open_log_file(
-        wsen_isds_file,
-        "wsen_isds.csv",
-        "timestamp,time_ms,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z"
-    );
-#endif
-
-#if ENABLE_AIRDOS
-    open_log_file(
-        airdos_file,
-        "airdos.csv",
-        "timestamp,time_ms,sensor,data"
-    );
-#endif
+    for (const LogEntry& log : log_files)
+    {
+        if (log.file) log.file->open(log.filename, log.header);
+    }
 
     // If opening one required file failed, discard that incomplete copy while
     // keeping the other storage device operational.

@@ -98,23 +98,34 @@ void handle_ping(const char*)
     send_reply("ACK", "PING");
 }
 
-void handle_set_target(const char* args)
+// Scalar settings share parsing and replies; each setter owns its range checks.
+void handle_scalar_setting(
+    const char* args,
+    const char* command,
+    bool (*setter)(float),
+    const char* format
+)
 {
-    float target_k;
-    if (!parse_float(args, target_k))
+    float value;
+    if (!parse_float(args, value))
     {
-        send_reply("NACK", "SET_TARGET", "INVALID_VALUE");
+        send_reply("NACK", command, "INVALID_VALUE");
         return;
     }
-    if (!thermal_control_set_target(target_k))
+    if (!setter(value))
     {
-        send_reply("NACK", "SET_TARGET", "OUT_OF_RANGE");
+        send_reply("NACK", command, "OUT_OF_RANGE");
         return;
     }
 
-    char value[16];
-    snprintf(value, sizeof(value), "%.2f", target_k);
-    send_reply("ACK", "SET_TARGET", value);
+    char detail[16];
+    snprintf(detail, sizeof(detail), format, value);
+    send_reply("ACK", command, detail);
+}
+
+void handle_set_target(const char* args)
+{
+    handle_scalar_setting(args, "SET_TARGET", thermal_control_set_target, "%.2f");
 }
 
 void handle_thermal_on(const char*)
@@ -195,22 +206,9 @@ void handle_set_kd(const char* args)
 
 void handle_set_downlink_limit(const char* args)
 {
-    float limit_kbit_s;
-    if (!parse_float(args, limit_kbit_s))
-    {
-        send_reply("NACK", "SET_DOWNLINK_LIMIT", "INVALID_VALUE");
-        return;
-    }
-
-    if (!ethernet_link_set_downlink_limit(limit_kbit_s))
-    {
-        send_reply("NACK", "SET_DOWNLINK_LIMIT", "OUT_OF_RANGE");
-        return;
-    }
-
-    char detail[16];
-    snprintf(detail, sizeof(detail), "%.6g", limit_kbit_s);
-    send_reply("ACK", "SET_DOWNLINK_LIMIT", detail);
+    handle_scalar_setting(
+        args, "SET_DOWNLINK_LIMIT", ethernet_link_set_downlink_limit, "%.6g"
+    );
 }
 
 void handle_set_heater(const char* args)
