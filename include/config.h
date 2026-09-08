@@ -130,6 +130,10 @@ constexpr float THERMAL_TARGET_K = 298.15f;
 constexpr float THERMAL_DEFAULT_KP = 0.0f; // % / K
 constexpr float THERMAL_DEFAULT_KI = 0.0f; // % / (K s)
 constexpr float THERMAL_DEFAULT_KD = 0.0f; // % s / K
+// Bang-bang hysteresis is the distance from target to either threshold.
+constexpr float THERMAL_DEFAULT_HYSTERESIS_K = 0.5f;
+constexpr float THERMAL_MAX_HYSTERESIS_K = 10.0f;
+constexpr float THERMAL_DEFAULT_BANG_BANG_POWER_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_PID_GAIN = 1000.0f;
 constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
@@ -232,3 +236,4 @@ constexpr float ETHERNET_MIN_DOWNLINK_LIMIT_KBIT_S = 2.0f;
 constexpr float ETHERNET_MAX_DOWNLINK_LIMIT_KBIT_S = 10000.0f;
 
 #endif // FLIGHT_SOFTWARE_CONFIG_H
+

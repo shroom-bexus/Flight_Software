@@ -1,5 +1,5 @@
 // SHROOM Flight Software
-// Thermal PID controller and persistent settings
+// Selectable PID / bang-bang controller and persistent settings
 
 #include "thermal_control.h"
 
@@ -21,13 +21,14 @@ struct ControllerState
     uint32_t previous_time_ms = 0;
     float output_percent = 0.0f;
     float target_k = THERMAL_TARGET_K;
+    bool bang_bang_on = false;
     bool initialized = false;
     bool enabled = true;
 };
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
-constexpr uint32_t SETTINGS_VERSION = 2;
+constexpr uint32_t SETTINGS_VERSION = 3;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -41,6 +42,9 @@ struct PersistentSettings
     float kp;
     float ki;
     float kd;
+    ThermalMode mode;
+    float hysteresis_k;
+    float bang_bang_power;
 };
 
 ControllerState controller;
@@ -67,6 +71,23 @@ void set_pid_defaults()
     settings.kd = THERMAL_DEFAULT_KD;
 }
 
+void set_bang_bang_defaults()
+{
+    settings.mode = ThermalMode::PID;
+    settings.hysteresis_k = THERMAL_DEFAULT_HYSTERESIS_K;
+    settings.bang_bang_power = THERMAL_DEFAULT_BANG_BANG_POWER_PERCENT;
+}
+
+bool hysteresis_valid(float value)
+{
+    return std::isfinite(value) && value > 0.0f && value <= THERMAL_MAX_HYSTERESIS_K;
+}
+
+bool bang_bang_power_valid(float value)
+{
+    return std::isfinite(value) && value >= 0.0f && value <= THERMAL_MAX_OUTPUT_PERCENT;
+}
+
 void load_settings()
 {
     EEPROM.get(0, settings);
@@ -79,6 +100,7 @@ void load_settings()
         settings.target_k = THERMAL_TARGET_K;
         settings.version = SETTINGS_VERSION;
         set_pid_defaults();
+        set_bang_bang_defaults();
         save_settings();
         return;
     }
@@ -86,20 +108,30 @@ void load_settings()
     bool settings_changed = false;
 
     // Older settings did not contain PID gains. Preserve their other values.
-    if (settings.version != SETTINGS_VERSION ||
+    if ((settings.version != 2 && settings.version != SETTINGS_VERSION) ||
         !pid_values_valid(settings.kp, settings.ki, settings.kd))
     {
-        settings.version = SETTINGS_VERSION;
         set_pid_defaults();
         settings_changed = true;
     }
 
+    // Append-only migration preserves version-2 PID gains and operator settings.
+    if (settings.version != SETTINGS_VERSION ||
+        (settings.mode != ThermalMode::PID && settings.mode != ThermalMode::BANG_BANG) ||
+        !hysteresis_valid(settings.hysteresis_k) ||
+        !bang_bang_power_valid(settings.bang_bang_power))
+    {
+        set_bang_bang_defaults();
+        settings.version = SETTINGS_VERSION;
+        settings_changed = true;
+    }
     if (settings_changed) save_settings();
 }
 
-void reset_pid()
+void reset_controller()
 {
     // Keep target and enabled state, but discard the PID history.
+    controller.bang_bang_on = false;
     controller.integral = 0.0f;
     controller.previous_temperature_k = NAN;
     controller.previous_time_ms = 0;
@@ -136,15 +168,15 @@ void thermal_control_update()
     // Never heat without a valid control sensor.
     if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
     {
-        controller.enabled ? reset_pid() : heater_all_off();
+        controller.enabled ? reset_controller() : heater_all_off();
         return;
     }
 
     const float temperature_k = max31865_get_temperature(sensor);
     // This cutoff also overrides stored manual heater outputs.
-    if (temperature_k >= THERMAL_MAX_TEMPERATURE_K)
+    if (!std::isfinite(temperature_k) || temperature_k >= THERMAL_MAX_TEMPERATURE_K)
     {
-        controller.enabled ? reset_pid() : heater_all_off();
+        controller.enabled ? reset_controller() : heater_all_off();
         return;
     }
 
@@ -155,6 +187,17 @@ void thermal_control_update()
         {
             heater_set_power(static_cast<Heater>(i), settings.heater_power[i]);
         }
+        return;
+    }
+
+    if (settings.mode == ThermalMode::BANG_BANG)
+    {
+        // Inside the band retain the previous state; after reset start OFF.
+        if (temperature_k <= controller.target_k - settings.hysteresis_k)
+            controller.bang_bang_on = true;
+        else if (temperature_k >= controller.target_k + settings.hysteresis_k)
+            controller.bang_bang_on = false;
+        apply_output(controller.bang_bang_on ? settings.bang_bang_power : 0.0f);
         return;
     }
 
@@ -248,6 +291,7 @@ bool thermal_control_set_target(float target_k)
     controller.target_k = target_k;
     settings.target_k = target_k;
     save_settings();
+    if (controller.enabled && settings.mode == ThermalMode::BANG_BANG) reset_controller();
     return true;
 }
 
@@ -261,7 +305,7 @@ bool thermal_control_set_pid(float kp, float ki, float kd)
     save_settings();
 
     // Discard the history calculated with the previous gains.
-    if (controller.enabled) reset_pid();
+    if (controller.enabled && settings.mode == ThermalMode::PID) reset_controller();
     return true;
 }
 
@@ -274,7 +318,7 @@ void thermal_control_set_enabled(bool enabled)
     // A mode change always starts with zero manual heater power.
     for (float& power : settings.heater_power) power = 0.0f;
     save_settings();
-    reset_pid();
+    reset_controller();
 }
 
 bool thermal_control_is_enabled()
@@ -289,4 +333,44 @@ void thermal_control_save_heater_state()
         settings.heater_power[i] = heater_get_power(static_cast<Heater>(i));
     }
     save_settings();
+}
+
+
+ThermalMode thermal_control_get_mode() { return settings.mode; }
+const char* thermal_control_get_mode_name()
+{
+    return settings.mode == ThermalMode::BANG_BANG ? "BANG_BANG" : "PID";
+}
+float thermal_control_get_hysteresis() { return settings.hysteresis_k; }
+float thermal_control_get_bang_bang_power() { return settings.bang_bang_power; }
+
+bool thermal_control_set_mode(ThermalMode mode)
+{
+    if (mode != ThermalMode::PID && mode != ThermalMode::BANG_BANG) return false;
+    if (settings.mode == mode) return true;
+    settings.mode = mode;
+    save_settings();
+    // Selecting a regulator does not enable thermal control or alter manual outputs.
+    if (controller.enabled) reset_controller();
+    return true;
+}
+
+bool thermal_control_set_hysteresis(float hysteresis_k)
+{
+    if (!hysteresis_valid(hysteresis_k)) return false;
+    if (settings.hysteresis_k == hysteresis_k) return true;
+    settings.hysteresis_k = hysteresis_k;
+    save_settings();
+    if (controller.enabled && settings.mode == ThermalMode::BANG_BANG) reset_controller();
+    return true;
+}
+
+bool thermal_control_set_bang_bang_power(float power_percent)
+{
+    if (!bang_bang_power_valid(power_percent)) return false;
+    if (settings.bang_bang_power == power_percent) return true;
+    settings.bang_bang_power = power_percent;
+    save_settings();
+    if (controller.enabled && settings.mode == ThermalMode::BANG_BANG) reset_controller();
+    return true;
 }

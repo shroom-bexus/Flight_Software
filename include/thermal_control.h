@@ -5,6 +5,17 @@
 #define FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 
 
+enum class ThermalMode : unsigned char { PID = 0, BANG_BANG = 1 };
+
+ThermalMode thermal_control_get_mode();
+const char* thermal_control_get_mode_name();
+bool thermal_control_set_mode(ThermalMode mode);
+// Half-width in Kelvin: ON at target - h, OFF at target + h.
+float thermal_control_get_hysteresis();
+bool thermal_control_set_hysteresis(float hysteresis_k);
+float thermal_control_get_bang_bang_power();
+bool thermal_control_set_bang_bang_power(float power_percent);
+
 /**
  * @brief Initialize the thermal controller.
  *
@@ -14,7 +25,7 @@ void thermal_control_init();
 
 
 /**
- * @brief Update the thermal PID controller.
+ * @brief Update the selected thermal controller.
  *
  * Uses the latest temperature measurement and applies the calculated
  * power equally to all heater channels.
@@ -99,3 +110,4 @@ bool thermal_control_is_enabled();
 void thermal_control_save_heater_state();
 
 #endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H
+

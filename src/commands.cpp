@@ -123,6 +123,26 @@ void handle_scalar_setting(
     send_reply("ACK", command, detail);
 }
 
+void handle_set_thermal_mode(const char* args)
+{
+    ThermalMode mode;
+    if (std::strcmp(args, "PID") == 0) mode = ThermalMode::PID;
+    else if (std::strcmp(args, "BANG_BANG") == 0) mode = ThermalMode::BANG_BANG;
+    else { send_reply("NACK", "SET_THERMAL_MODE", "INVALID_VALUE"); return; }
+    thermal_control_set_mode(mode);
+    send_reply("ACK", "SET_THERMAL_MODE", thermal_control_get_mode_name());
+}
+
+void handle_set_hysteresis(const char* args)
+{
+    handle_scalar_setting(args, "SET_HYSTERESIS", thermal_control_set_hysteresis, "%.6g");
+}
+
+void handle_set_bang_bang_power(const char* args)
+{
+    handle_scalar_setting(args, "SET_BB_POWER", thermal_control_set_bang_bang_power, "%.6g");
+}
+
 void handle_set_target(const char* args)
 {
     handle_scalar_setting(args, "SET_TARGET", thermal_control_set_target, "%.2f");
@@ -292,6 +312,9 @@ const CommandEntry command_table[] =
     {"SET_TARGET", handle_set_target},
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
+    {"SET_THERMAL_MODE", handle_set_thermal_mode},
+    {"SET_HYSTERESIS", handle_set_hysteresis},
+    {"SET_BB_POWER", handle_set_bang_bang_power},
     {"SET_PID", handle_set_pid},
     {"SET_KP", handle_set_kp},
     {"SET_KI", handle_set_ki},
@@ -372,3 +395,4 @@ void commands_handle(const char* message)
 }
 
 #endif // ENABLE_ETHERNET
+

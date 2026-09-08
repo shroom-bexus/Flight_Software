@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+
 #include <deque>
 #include <string>
 #include <cassert>
@@ -32,3 +33,8 @@ struct HardwareSerialIMXRT {
 };
 inline HardwareSerialIMXRT Serial, Serial1, Serial2, Serial3, Serial4,
     Serial5, Serial6, Serial7, Serial8;
+
+#include <cstdio>
+template<class T> T constrain(T x, T lo, T hi) { return x < lo ? lo : x > hi ? hi : x; }
+
+
