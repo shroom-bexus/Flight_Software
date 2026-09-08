@@ -163,12 +163,18 @@ constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {8, 9};
 #define AIRDOS_8_SERIAL Serial2
 #define AIRDOS_9_SERIAL Serial7
 #else
-// Secondary AIRDOS 1-7 are implemented separately later. Keep the existing
-// single-channel behavior until that integration is done.
-constexpr uint8_t AIRDOS_CHANNEL_COUNT = 1;
-constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {0};
-#define AIRDOS_LEGACY_SERIAL Serial7
+// PCB v2.2: AIRDOS 1-7 occupy Serial2 through Serial8.
+constexpr uint8_t AIRDOS_CHANNEL_COUNT = 7;
+constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {1, 2, 3, 4, 5, 6, 7};
 #endif
+
+// Inter-Teensy link: PCB TX_T/RX_T, Serial1 RX=0 / TX=1 on both boards.
+// 2 Mbaud (8N1) provides 200 kB/s, above seven 115200-baud inputs.
+#define TEENSY_LINK_SERIAL Serial1
+constexpr uint32_t TEENSY_LINK_BAUD_RATE = 2000000;
+constexpr size_t AIRDOS_LINE_BUFFER_SIZE = 256;
+constexpr size_t AIRDOS_UART_RX_BUFFER_SIZE = 4096;
+constexpr size_t TEENSY_LINK_BUFFER_SIZE = 32768;
 
 // AIRDOS raw-data downlink priority
 //

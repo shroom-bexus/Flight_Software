@@ -6,6 +6,7 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "teensy_link.h"
 
 #if ENABLE_ETHERNET
 #include "airdos.h"
@@ -265,6 +266,23 @@ void telemetry_update()
 #endif
 
 #if ENABLE_AIRDOS
+    // For remote sensors, health here describes reception at the primary.
+    // Source parser-overflow counters arrive separately every five seconds.
+    for (uint8_t id = 1; id <= 7; ++id)
+    {
+        const bool received = teensy_link_has_received(id);
+        const uint32_t age = received
+            ? time_ms - teensy_link_last_received_ms(id) : 0;
+        const char* state = received
+            ? (age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
+            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
+        snprintf(message, sizeof(message), "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
+            static_cast<unsigned long>(time_ms), id, state,
+            static_cast<unsigned long>(age),
+            static_cast<unsigned long>(teensy_link_remote_overflows(id)));
+        ethernet_link_send_line(message);
+    }
+
     // Report each AIRDOS channel independently.
     for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
     {

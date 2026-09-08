@@ -12,8 +12,7 @@ namespace
 
 // UART buffers
 
-constexpr size_t AIRDOS_LINE_BUFFER_SIZE = 256;
-constexpr size_t AIRDOS_UART_RX_BUFFER_SIZE = 1024;
+
 
 
 #if FLIGHT_PRIMARY
@@ -25,7 +24,7 @@ HardwareSerialIMXRT* const airdos_serials[AIRDOS_CHANNEL_COUNT] =
 #else
 HardwareSerialIMXRT* const airdos_serials[AIRDOS_CHANNEL_COUNT] =
 {
-    &AIRDOS_LEGACY_SERIAL
+    &Serial2, &Serial3, &Serial4, &Serial5, &Serial6, &Serial7, &Serial8
 };
 #endif
 
