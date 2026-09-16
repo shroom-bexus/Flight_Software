@@ -90,9 +90,9 @@ constexpr uint8_t MAX31865_CS_PINS[MAX31865_CHANNEL_COUNT] =
 };
 constexpr float MAX31865_RREF[MAX31865_CHANNEL_COUNT] =
 {
-    4300.0f, 4300.0f, 4300.0f,
-    4300.0f, 4300.0f, 4300.0f,
-    4300.0f, 4300.0f, 4300.0f
+    4291.0f, 4295.0f, 4302.0f,
+    4311.0f, 4290.0f, 4306.0f,
+    4296.0f, 4296.0f, 4292.0f
 };
 // T_calibrated = T_measured * scale + offset.
 constexpr float MAX31865_SCALE[MAX31865_CHANNEL_COUNT] =
