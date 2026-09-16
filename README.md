@@ -204,3 +204,31 @@ appear, plus any downlink queue delay.
 Validation: host-side regression tests exercise the real controller source with
 simulated EEPROM, sensor and heater interfaces. Hardware timing, PWM and thermal
 response still require a Teensy bench test before use.
+
+## Independent storage health
+
+Every five seconds the Primary sends separate messages for its own storage
+and the Secondary's storage, using Primary reception time for the health batch:
+
+```text
+HEALTH,<time_ms>,SD_INTERNAL,<state>,<errors>
+HEALTH,<time_ms>,SD_BACKUP,<state>,<errors>
+HEALTH,<time_ms>,SD_SECONDARY_INTERNAL,<state>,<errors>
+HEALTH,<time_ms>,SD_SECONDARY_BACKUP,<state>,<errors>
+```
+
+These replace the aggregate `SD` health entry. Existing per-card initialization,
+open/header, write-length and flush/sync error checks feed the individual counters.
+A failed device stops logging; the other device continues independently.
+There is no automatic storage reinitialization. Counters reset on board reboot.
+
+The Secondary transmits `!S,<storage>,<state>,<errors>` over the same Serial1 link
+as AIRDOS. Storage is 0 (internal) or 1 (backup); state is 0 (disabled), 1 (OK)
+or 2 (fault). Frames are bounded and skipped if the UART queue is full, then
+retried at the next health interval. The Primary validates each frame and
+reports WAITING before the first report, or STALE when status is absent for
+more than three health periods (15 s). STALE is a communication/observability
+warning, not a detected SD write error; its counter is the last reported count.
+
+The GS presents temperatures and accepts `target` in °C. Flight control,
+telemetry, raw commands and CSV temperatures continue to use Kelvin.

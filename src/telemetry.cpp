@@ -198,17 +198,25 @@ void telemetry_update()
 
     char message[96];
 
-#if ENABLE_SD_LOGGING
-    snprintf(
-        message,
-        sizeof(message),
-        "HEALTH,%lu,SD,%s,%lu",
-        static_cast<unsigned long>(time_ms),
-        logger_is_ready() ? "OK" : "FAULT",
-        static_cast<unsigned long>(logger_get_error_count())
-    );
-    ethernet_link_send_line(message);
-#endif
+    // One entry per card, including Secondary cards with reception freshness.
+    const char* storage_names[] = {"SD_INTERNAL", "SD_BACKUP",
+        "SD_SECONDARY_INTERNAL", "SD_SECONDARY_BACKUP"};
+    const char* storage_states[] = {
+        !ENABLE_SD_LOGGING ? "DISABLED" : (logger_internal_sd_is_ready() ? "OK" : "FAULT"),
+        !ENABLE_BACKUP_SD_LOGGING ? "DISABLED" : (logger_backup_sd_is_ready() ? "OK" : "FAULT"),
+        teensy_link_storage_state(0), teensy_link_storage_state(1)
+    };
+    const uint32_t storage_errors[] = {
+        logger_get_internal_sd_error_count(), logger_get_backup_sd_error_count(),
+        teensy_link_storage_errors(0), teensy_link_storage_errors(1)
+    };
+    for (uint8_t i = 0; i < 4; ++i)
+    {
+        snprintf(message, sizeof(message), "HEALTH,%lu,%s,%s,%lu",
+            static_cast<unsigned long>(time_ms), storage_names[i], storage_states[i],
+            static_cast<unsigned long>(storage_errors[i]));
+        ethernet_link_send_line(message);
+    }
 
 #if ENABLE_MAX31865
     // Report every enabled RTD channel separately.

@@ -21,9 +21,39 @@ bool discard = true; // A reset may occur in the middle of an incoming frame.
 bool received[7] = {};
 uint32_t last_received[7] = {};
 uint32_t remote_overflows[7] = {};
+struct StorageStatus {
+    bool received = false;
+    uint8_t state = 0; // 0 disabled, 1 OK, 2 fault
+    uint32_t errors = 0;
+    uint32_t received_ms = 0;
+};
+StorageStatus storage_status[2];
 
 void receive_line()
 {
+    // Storage frame: !S,<0 internal|1 backup>,<0 disabled|1 OK|2 fault>,<errors>.
+    if (strncmp(line, "!S,", 3) == 0)
+    {
+        if (length < 8 || line[3] < '0' || line[3] > '1' ||
+            line[4] != ',' || line[5] < '0' || line[5] > '2' || line[6] != ',')
+        {
+            ++errors;
+            return;
+        }
+        uint32_t count = 0;
+        for (size_t i = 7; i < length; ++i)
+        {
+            if (line[i] < '0' || line[i] > '9' ||
+                count > (UINT32_MAX - (line[i] - '0')) / 10)
+            {
+                ++errors;
+                return;
+            }
+            count = count * 10 + (line[i] - '0');
+        }
+        storage_status[line[3] - '0'] = {true, static_cast<uint8_t>(line[5] - '0'), count, millis()};
+        return;
+    }
     // Periodic source parser-overflow count; no measurement timestamp is
     // inferred from this status message.
     if (length >= 6 && strncmp(line, "!O,", 3) == 0 &&
@@ -73,6 +103,7 @@ void teensy_link_init()
     memset(received, 0, sizeof(received));
     memset(last_received, 0, sizeof(last_received));
     memset(remote_overflows, 0, sizeof(remote_overflows));
+    for (auto& status : storage_status) status = StorageStatus{};
     TEENSY_LINK_SERIAL.addMemoryForRead(uart_buffer, sizeof(uart_buffer));
 #else
     TEENSY_LINK_SERIAL.addMemoryForWrite(uart_buffer, sizeof(uart_buffer));
@@ -142,6 +173,20 @@ void teensy_link_update()
     if (millis() - last_status >= HEALTH_TELEMETRY_PERIOD_MS)
     {
         last_status = millis();
+        // Send storage before the overflow counters. Retry on the next period
+        // if the UART queue is full; never block local measurement logging.
+        for (uint8_t storage = 0; storage < 2; ++storage)
+        {
+            const bool enabled = storage == 0 ? ENABLE_SD_LOGGING : ENABLE_BACKUP_SD_LOGGING;
+            const bool ready = storage == 0 ? logger_internal_sd_is_ready() : logger_backup_sd_is_ready();
+            const uint32_t count = storage == 0 ? logger_get_internal_sd_error_count() : logger_get_backup_sd_error_count();
+            char status[32];
+            const int size = snprintf(status, sizeof(status), "\n!S,%u,%u,%lu\n",
+                storage, enabled ? (ready ? 1 : 2) : 0, static_cast<unsigned long>(count));
+            if (size > 0 && static_cast<size_t>(size) < sizeof(status) &&
+                TEENSY_LINK_SERIAL.availableForWrite() >= size)
+                TEENSY_LINK_SERIAL.write(reinterpret_cast<const uint8_t*>(status), size);
+        }
         for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
         {
             char status[32];
@@ -197,6 +242,31 @@ uint32_t teensy_link_remote_overflows(uint8_t sensor_id)
     if (sensor_id >= 1 && sensor_id <= 7) return remote_overflows[sensor_id - 1];
 #else
     (void)sensor_id;
+#endif
+    return 0;
+}
+
+const char* teensy_link_storage_state(uint8_t storage)
+{
+#if FLIGHT_PRIMARY
+    if (storage >= 2) return "WAITING";
+    const auto& status = storage_status[storage];
+    if (!status.received)
+        return millis() > 3 * HEALTH_TELEMETRY_PERIOD_MS ? "STALE" : "WAITING";
+    if (millis() - status.received_ms > 3 * HEALTH_TELEMETRY_PERIOD_MS) return "STALE";
+    return status.state == 0 ? "DISABLED" : (status.state == 1 ? "OK" : "FAULT");
+#else
+    (void)storage;
+    return "WAITING";
+#endif
+}
+
+uint32_t teensy_link_storage_errors(uint8_t storage)
+{
+#if FLIGHT_PRIMARY
+    if (storage < 2) return storage_status[storage].errors;
+#else
+    (void)storage;
 #endif
     return 0;
 }

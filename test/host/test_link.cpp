@@ -10,11 +10,17 @@ std::vector<std::pair<uint8_t, std::string>> logged, downlinked;
 void logger_log_airdos(uint8_t id, const char* data) { logged.emplace_back(id, data); }
 void telemetry_send_airdos(uint8_t id, const char* data) { downlinked.emplace_back(id, data); }
 
+bool logger_internal_sd_is_ready() { return true; }
+bool logger_backup_sd_is_ready() { return false; }
+uint32_t logger_get_internal_sd_error_count() { return 0; }
+uint32_t logger_get_backup_sd_error_count() { return 3; }
+
 int main() {
     teensy_link_init();
     airdos_init();
     assert(Serial1.baud == 2000000);
 #if FLIGHT_PRIMARY
+    assert(std::string(teensy_link_storage_state(0)) == "WAITING");
     // A primary reboot midway through a frame must not accept its tail.
     Serial1.inject("!A,1,$E,cut\n\n!A,1,$E,10,20\n");
     fake_time = 123;
@@ -51,6 +57,31 @@ int main() {
     assert(teensy_link_remote_overflows(2) == UINT32_MAX);
     assert(teensy_link_get_error_count() == 7);
     assert(teensy_link_remote_overflows(0) == 0);
+    // Independent storage state, fragmented input and strict numeric validation.
+    Serial1.inject("\n!S,0,1,0\n!S,1,2,");
+    teensy_link_update();
+    assert(std::string(teensy_link_storage_state(0)) == "OK");
+    assert(std::string(teensy_link_storage_state(1)) == "WAITING");
+    Serial1.inject("3\n");
+    teensy_link_update();
+    assert(std::string(teensy_link_storage_state(1)) == "FAULT");
+    assert(teensy_link_storage_errors(1) == 3);
+    Serial1.inject("!S,1,2,4294967296\n!S,2,1,0\n!S,1,3,0\n!S,1,1,-1\n!S,1,1,\n");
+    teensy_link_update();
+    assert(teensy_link_get_error_count() == 12);
+    assert(teensy_link_storage_errors(1) == 3);
+    fake_time += 3 * HEALTH_TELEMETRY_PERIOD_MS + 1;
+    assert(std::string(teensy_link_storage_state(0)) == "STALE");
+    assert(std::string(teensy_link_storage_state(1)) == "STALE");
+    Serial1.inject("!S,1,1,0\n!S,0,0,0\n"); // Secondary reboot / disabled card.
+    teensy_link_update();
+    assert(std::string(teensy_link_storage_state(1)) == "OK");
+    assert(teensy_link_storage_errors(1) == 0);
+    assert(std::string(teensy_link_storage_state(0)) == "DISABLED");
+    teensy_link_init();
+    assert(std::string(teensy_link_storage_state(1)) == "STALE");
+    fake_time = 0;
+    assert(std::string(teensy_link_storage_state(1)) == "WAITING");
 #else
     // Check physical serial mapping and preservation of comma-rich payloads.
     HardwareSerialIMXRT* inputs[] = {&Serial2, &Serial3, &Serial4, &Serial5,
@@ -81,6 +112,13 @@ int main() {
     fake_time = 5000;
     teensy_link_update();
     assert(Serial1.tx.find("\n!O,1,1\n") != std::string::npos);
+    assert(Serial1.tx.find("\n!S,0,1,0\n") != std::string::npos);
+    assert(Serial1.tx.find("\n!S,1,2,3\n") != std::string::npos);
+    before = Serial1.tx;
+    Serial1.room = 1;
+    fake_time += HEALTH_TELEMETRY_PERIOD_MS;
+    teensy_link_update();
+    assert(Serial1.tx == before); // Status cannot block when TX is full.
 #endif
     std::cout << (FLIGHT_PRIMARY ? "primary" : "secondary") << " host tests passed\n";
 }
