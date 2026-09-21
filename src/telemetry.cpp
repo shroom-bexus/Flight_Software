@@ -12,6 +12,7 @@
 #include "airdos.h"
 #include "ethernet_link.h"
 #include "logger.h"
+#include "rtc.h"
 #include "max31865.h"
 #include "wsen_hids.h"
 #include "wsen_isds.h"
@@ -201,6 +202,14 @@ void telemetry_update()
     snprintf(message, sizeof(message), "HEALTH,%lu,SECONDARY,%s,%lu",
         static_cast<unsigned long>(time_ms), teensy_link_state(),
         static_cast<unsigned long>(teensy_link_get_error_count()));
+    ethernet_link_send_line(message);
+
+    // Same UTC source as SD timestamps; never label an unset clock as valid.
+    char timestamp[21] = "";
+    const bool rtc_valid = rtc_is_valid();
+    if (rtc_valid) rtc_get_timestamp(timestamp, sizeof(timestamp));
+    snprintf(message, sizeof(message), "RTC,%lu,%u,%s",
+        static_cast<unsigned long>(time_ms), rtc_valid ? 1 : 0, timestamp);
     ethernet_link_send_line(message);
 
     // One entry per card, including Secondary cards with reception freshness.
