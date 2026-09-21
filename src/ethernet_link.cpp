@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "binary_telemetry.h"
 
 
 namespace
@@ -16,78 +17,73 @@ namespace
 // Conservative UDP wire-size estimate including preamble and inter-frame gap.
 constexpr size_t PACKET_OVERHEAD_BYTES = 66;
 constexpr size_t MINIMUM_PACKET_BYTES = 84;
-constexpr size_t SEQUENCE_HEADER_MAX = 32;
+constexpr uint32_t AIRDOS_BATCH_WAIT_MS = 20;
 
 
 struct TelemetryLine
 {
-    char text[ETHERNET_TELEMETRY_LINE_MAX] = {};
+    size_t offset = 0;
     uint16_t length = 0;
     uint8_t sensor_id = 0;
+    uint32_t queued_ms = 0;
 };
 
-
+// Variable-length binary records share a byte ring. A short event does not
+// reserve a full 384-byte text slot. Both byte and descriptor limits are bounded.
 template <size_t Capacity>
 class LineQueue
 {
 public:
     bool push(const char* message, uint8_t sensor_id = 0)
     {
-        if (message == nullptr || count_ >= Capacity) return false;
+        if (message == nullptr || std::strlen(message) >= ETHERNET_TELEMETRY_LINE_MAX)
+            return false;
+        uint8_t record[ETHERNET_TELEMETRY_LINE_MAX + 3];
+        const size_t length = binary_telemetry::record(message, record, sizeof(record));
+        return length && push_record(record, length, sensor_id, millis());
+    }
 
-        const size_t length = std::strlen(message);
-        if (length >= ETHERNET_TELEMETRY_LINE_MAX) return false;
-
+    bool push_record(const uint8_t* record, size_t length, uint8_t sensor_id,
+                     uint32_t queued_ms)
+    {
+        if (count_ >= Capacity || length > sizeof(bytes_) - used_) return false;
         TelemetryLine& line = lines_[tail_];
-        std::memcpy(line.text, message, length + 1);
-        line.length = static_cast<uint16_t>(length);
-        line.sensor_id = sensor_id;
-
+        line = {byte_tail_, static_cast<uint16_t>(length), sensor_id, queued_ms};
+        for (size_t i=0; i<length; ++i)
+            bytes_[(byte_tail_ + i) % sizeof(bytes_)] = record[i];
+        byte_tail_ = (byte_tail_ + length) % sizeof(bytes_);
+        used_ += length;
         tail_ = (tail_ + 1) % Capacity;
         ++count_;
         return true;
     }
 
-    TelemetryLine* front()
-    {
-        return at(0);
-    }
-
+    TelemetryLine* front() { return at(0); }
     TelemetryLine* at(size_t offset)
     {
-        if (offset >= count_) return nullptr;
-        return &lines_[(head_ + offset) % Capacity];
+        return offset < count_ ? &lines_[(head_ + offset) % Capacity] : nullptr;
     }
-
+    void copy(const TelemetryLine& line, uint8_t* target) const
+    {
+        for (size_t i=0; i<line.length; ++i)
+            target[i] = bytes_[(line.offset + i) % sizeof(bytes_)];
+    }
     void pop(size_t number = 1)
     {
-        if (number > count_) number = count_;
-        head_ = (head_ + number) % Capacity;
-        count_ -= number;
+        while (number-- && count_)
+        {
+            used_ -= lines_[head_].length;
+            head_ = (head_ + 1) % Capacity;
+            --count_;
+        }
     }
-
-    void clear()
-    {
-        head_ = 0;
-        tail_ = 0;
-        count_ = 0;
-    }
-
-    size_t size() const
-    {
-        return count_;
-    }
-
-    bool empty() const
-    {
-        return count_ == 0;
-    }
-
+    void clear() { head_=tail_=count_=byte_tail_=used_=0; }
+    size_t size() const { return count_; }
+    bool empty() const { return count_ == 0; }
 private:
     TelemetryLine lines_[Capacity];
-    size_t head_ = 0;
-    size_t tail_ = 0;
-    size_t count_ = 0;
+    uint8_t bytes_[Capacity * (Capacity > 32 ? 32 : 128)];
+    size_t head_=0, tail_=0, count_=0, byte_tail_=0, used_=0;
 };
 
 
@@ -236,12 +232,14 @@ void purge_unselected_airdos()
         if (front == nullptr) break;
 
         const TelemetryLine line = *front;
+        uint8_t record[ETHERNET_TELEMETRY_LINE_MAX + 3];
+        airdos_queue.copy(line, record);
         airdos_queue.pop();
 
         if (airdos_sensor_selected(line.sensor_id))
         {
             // Space is guaranteed because one element was just removed.
-            airdos_queue.push(line.text, line.sensor_id);
+            airdos_queue.push_record(record, line.length, line.sensor_id, line.queued_ms);
         }
         else
         {
@@ -367,65 +365,33 @@ bool send_regular_payload(const char* payload, size_t payload_length)
 }
 
 
-bool send_system_packet()
+template <size_t Capacity>
+bool send_binary_packet(LineQueue<Capacity>& queue, size_t maximum)
 {
-    if (system_queue.empty()) return false;
-
-    char payload[ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX];
-    const uint32_t next_sequence = telemetry_sequence + 1;
-    const int header_length = snprintf(
-        payload,
-        sizeof(payload),
-        "SEQ,%lu\n",
-        static_cast<unsigned long>(next_sequence)
-    );
-    if (header_length <= 0) return false;
-
-    size_t payload_length = static_cast<size_t>(header_length);
-    size_t lines_added = 0;
-
-    while (lines_added < system_queue.size())
+    if (queue.empty() || !regular_send_ready()) return false;
+    uint8_t payload[ETHERNET_UDP_PAYLOAD_MAX];
+    binary_telemetry::header(payload, telemetry_sequence + 1);
+    size_t length = 8;
+    size_t count = 0;
+    while (count < queue.size())
     {
-        TelemetryLine* line = system_queue.at(lines_added);
-        if (line == nullptr) break;
-
-        const size_t required = line->length + 1;
-        if (payload_length + required > sizeof(payload)) break;
-
-        std::memcpy(payload + payload_length, line->text, line->length);
-        payload_length += line->length;
-        payload[payload_length++] = '\n';
-        ++lines_added;
+        const TelemetryLine& line = *queue.at(count);
+        if (length + line.length > maximum) break;
+        queue.copy(line, payload + length);
+        length += line.length;
+        ++count;
     }
-
-    if (lines_added == 0) return false;
-    if (!send_regular_payload(payload, payload_length)) return false;
-
-    system_queue.pop(lines_added);
+    // A system line larger than the normal batching target still must drain.
+    if (count == 0 && length + queue.front()->length <= sizeof(payload))
+    {
+        queue.copy(*queue.front(), payload + length);
+        length += queue.front()->length;
+        count = 1;
+    }
+    if (count == 0 || !send_regular_payload(
+            reinterpret_cast<const char*>(payload), length)) return false;
+    queue.pop(count);
     return true;
-}
-
-
-bool send_airdos_packet(const TelemetryLine& line)
-{
-    char payload[ETHERNET_TELEMETRY_LINE_MAX + SEQUENCE_HEADER_MAX];
-    const uint32_t next_sequence = telemetry_sequence + 1;
-    const int header_length = snprintf(
-        payload,
-        sizeof(payload),
-        "SEQ,%lu\n",
-        static_cast<unsigned long>(next_sequence)
-    );
-    if (header_length <= 0) return false;
-
-    size_t payload_length = static_cast<size_t>(header_length);
-    if (payload_length + line.length + 1 > sizeof(payload)) return false;
-
-    std::memcpy(payload + payload_length, line.text, line.length);
-    payload_length += line.length;
-    payload[payload_length++] = '\n';
-
-    return send_regular_payload(payload, payload_length);
 }
 
 
@@ -436,7 +402,7 @@ void flush_telemetry()
     // Housekeeping/system telemetry always has priority over AIRDOS raw data.
     if (!system_queue.empty())
     {
-        send_system_packet();
+        send_binary_packet(system_queue, ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX);
         return;
     }
 
@@ -454,9 +420,11 @@ void flush_telemetry()
     }
 
     TelemetryLine* line = airdos_queue.front();
-    if (line != nullptr && send_airdos_packet(*line))
+    if (line != nullptr &&
+        (millis() - line->queued_ms >= AIRDOS_BATCH_WAIT_MS ||
+         airdos_queue.size() >= ETHERNET_AIRDOS_QUEUE_DEPTH / 2))
     {
-        airdos_queue.pop();
+        send_binary_packet(airdos_queue, ETHERNET_UDP_PAYLOAD_MAX);
     }
 }
 

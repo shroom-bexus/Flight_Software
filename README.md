@@ -266,3 +266,10 @@ The terminal and browser dashboard show the last received sample in UTC and
 its reception age (not transport latency), with STALE after 15 seconds or
 while disconnected. No PC-clock substitution or RTC-setting command is used.
 Update both firmware and GS; older firmware leaves the display waiting.
+
+### Binary downlink
+
+Regular telemetry now uses lossless SHB1 binary records and bounded UDP batches.
+Update the Groundstation first; older receivers cannot decode SHB1. Commands and
+SD logs retain their existing formats. See [protocol and replay results](docs/binary-telemetry.md)
+for memory requirements, rollout and the nine-sensor load test.
