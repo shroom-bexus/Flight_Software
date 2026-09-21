@@ -52,7 +52,10 @@ constexpr uint32_t MAX31865_SAMPLE_PERIOD_MS = 1000;
 constexpr uint32_t WSEN_PADS_SAMPLE_PERIOD_MS = 2000;
 constexpr uint32_t WSEN_HIDS_SAMPLE_PERIOD_MS = 4000;
 constexpr uint32_t WSEN_ISDS_SAMPLE_PERIOD_MS = 10;
+// Internal Secondary->Primary health cadence. Keep this fast for local fault detection.
 constexpr uint32_t HEALTH_TELEMETRY_PERIOD_MS = 5000;
+// Ground-station housekeeping cadence during flight. Sensor/science telemetry is unaffected.
+constexpr uint32_t SYSTEM_TELEMETRY_PERIOD_MS = 60000;
 
 // Storage
 // The built-in Teensy 4.1 card uses SDIO. The soldered Adafruit XTSD backup
