@@ -261,10 +261,10 @@ size_t telemetry_packet_target()
         return ETHERNET_UDP_PAYLOAD_MAX;
     }
 
-    return min(
-        ETHERNET_UDP_PAYLOAD_MAX,
-        wire_bytes - PACKET_OVERHEAD_BYTES
-    );
+    const size_t payload_bytes = wire_bytes - PACKET_OVERHEAD_BYTES;
+    return payload_bytes < ETHERNET_UDP_PAYLOAD_MAX
+        ? payload_bytes
+        : ETHERNET_UDP_PAYLOAD_MAX;
 }
 
 
