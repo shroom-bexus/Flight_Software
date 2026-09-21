@@ -198,6 +198,11 @@ void telemetry_update()
 
     char message[96];
 
+    snprintf(message, sizeof(message), "HEALTH,%lu,SECONDARY,%s,%lu",
+        static_cast<unsigned long>(time_ms), teensy_link_state(),
+        static_cast<unsigned long>(teensy_link_get_error_count()));
+    ethernet_link_send_line(message);
+
     // One entry per card, including Secondary cards with reception freshness.
     const char* storage_names[] = {"SD_INTERNAL", "SD_BACKUP",
         "SD_SECONDARY_INTERNAL", "SD_SECONDARY_BACKUP"};

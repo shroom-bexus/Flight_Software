@@ -20,6 +20,31 @@ int main() {
     airdos_init();
     assert(Serial1.baud == 2000000);
 #if FLIGHT_PRIMARY
+    assert(std::string(teensy_link_state()) == "WAITING");
+    fake_time = 3 * HEALTH_TELEMETRY_PERIOD_MS;
+    assert(std::string(teensy_link_state()) == "FAULT");
+    Serial1.inject("\n!S,0,1,0\n");
+    teensy_link_update();
+    assert(std::string(teensy_link_state()) == "OK");
+    fake_time += 3 * HEALTH_TELEMETRY_PERIOD_MS;
+    assert(std::string(teensy_link_state()) == "FAULT");
+    Serial1.inject("!S,0,1,bad\n");
+    teensy_link_update();
+    assert(std::string(teensy_link_state()) == "FAULT");
+    Serial1.inject("!O,1,0\n");
+    teensy_link_update();
+    assert(std::string(teensy_link_state()) == "OK");
+    // Unsigned subtraction must handle the 32-bit millis rollover.
+    fake_time = UINT32_MAX - 5000;
+    teensy_link_init();
+    Serial1.inject("\n!S,0,1,0\n");
+    teensy_link_update();
+    fake_time = 1000;
+    assert(std::string(teensy_link_state()) == "OK");
+    fake_time = 15000;
+    assert(std::string(teensy_link_state()) == "FAULT");
+    fake_time = 0;
+    teensy_link_init();
     assert(std::string(teensy_link_storage_state(0)) == "WAITING");
     // A primary reboot midway through a frame must not accept its tail.
     Serial1.inject("!A,1,$E,cut\n\n!A,1,$E,10,20\n");

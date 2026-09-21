@@ -18,6 +18,16 @@ uint8_t uart_buffer[TEENSY_LINK_BUFFER_SIZE];
 char line[AIRDOS_LINE_BUFFER_SIZE + 8];
 size_t length = 0;
 bool discard = true; // A reset may occur in the middle of an incoming frame.
+bool link_received = false;
+uint32_t link_started_ms = 0;
+uint32_t link_last_received_ms = 0;
+
+void mark_link_received()
+{
+    link_received = true;
+    link_last_received_ms = millis();
+}
+
 bool received[7] = {};
 uint32_t last_received[7] = {};
 uint32_t remote_overflows[7] = {};
@@ -51,6 +61,7 @@ void receive_line()
             }
             count = count * 10 + (line[i] - '0');
         }
+        mark_link_received();
         storage_status[line[3] - '0'] = {true, static_cast<uint8_t>(line[5] - '0'), count, millis()};
         return;
     }
@@ -70,6 +81,7 @@ void receive_line()
             }
             value = value * 10 + (line[i] - '0');
         }
+        mark_link_received();
         remote_overflows[line[3] - '1'] = value;
         return;
     }
@@ -83,6 +95,7 @@ void receive_line()
         return;
     }
 
+    mark_link_received();
     const uint8_t id = line[3] - '0';
     received[id - 1] = true;
     last_received[id - 1] = millis();
@@ -98,6 +111,9 @@ void teensy_link_init()
 {
     errors = 0;
 #if FLIGHT_PRIMARY
+    link_received = false;
+    link_started_ms = millis();
+    link_last_received_ms = 0;
     length = 0;
     discard = true;
     memset(received, 0, sizeof(received));
@@ -244,6 +260,17 @@ uint32_t teensy_link_remote_overflows(uint8_t sensor_id)
     (void)sensor_id;
 #endif
     return 0;
+}
+
+const char* teensy_link_state()
+{
+#if FLIGHT_PRIMARY
+    const uint32_t age = millis() - (link_received ? link_last_received_ms : link_started_ms);
+    if (age >= 3 * HEALTH_TELEMETRY_PERIOD_MS) return "FAULT";
+    return link_received ? "OK" : "WAITING";
+#else
+    return "DISABLED";
+#endif
 }
 
 const char* teensy_link_storage_state(uint8_t storage)
