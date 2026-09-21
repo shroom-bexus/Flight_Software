@@ -16,6 +16,9 @@ bool teensy_link_has_received(uint8_t sensor_id);
 uint32_t teensy_link_last_received_ms(uint8_t sensor_id);
 uint32_t teensy_link_remote_overflows(uint8_t sensor_id);
 
+// Primary UART liveness; valid AIRDOS or status frames prove activity.
+const char* teensy_link_state();
+
 // Secondary storage: index 0 = internal SD, 1 = backup XTSD.
 // WAITING before first report, STALE after three missed health intervals.
 const char* teensy_link_storage_state(uint8_t storage);

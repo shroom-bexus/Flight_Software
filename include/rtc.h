@@ -15,6 +15,9 @@
  */
 bool rtc_init();
 
+// True when TimeLib is synchronized with the hardware RTC.
+bool rtc_is_valid();
+
 
 /**
  * @brief Write the current UTC timestamp into a buffer.
