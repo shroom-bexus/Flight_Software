@@ -194,7 +194,7 @@ void telemetry_update()
 
     // Health data is periodic and uses one timestamp for the complete batch.
     const uint32_t time_ms = millis();
-    if (time_ms - last_health_time < HEALTH_TELEMETRY_PERIOD_MS) return;
+    if (time_ms - last_health_time < SYSTEM_TELEMETRY_PERIOD_MS) return;
     last_health_time = time_ms;
 
     char message[96];
