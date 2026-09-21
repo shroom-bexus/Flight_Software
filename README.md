@@ -232,3 +232,16 @@ warning, not a detected SD write error; its counter is the last reported count.
 
 The GS presents temperatures and accepts `target` in °C. Flight control,
 telemetry, raw commands and CSV temperatures continue to use Kelvin.
+
+
+### Primary RTC telemetry
+
+The primary sends `RTC,time_ms,valid,timestamp_utc` every 5 seconds with health
+telemetry, through the existing bandwidth-limited system queue. For example:
+`RTC,12345,1,2026-09-21T12:34:56Z`. An unsynchronized clock sends
+`RTC,12345,0,`. UTC uses the same TimeLib/hardware RTC source as SD timestamps;
+validity confirms synchronization, not accuracy against an external clock.
+The terminal and browser dashboard show the last received sample in UTC and
+its reception age (not transport latency), with STALE after 15 seconds or
+while disconnected. No PC-clock substitution or RTC-setting command is used.
+Update both firmware and GS; older firmware leaves the display waiting.

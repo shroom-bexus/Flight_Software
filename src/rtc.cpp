@@ -28,6 +28,12 @@ bool rtc_init()
 }
 
 
+bool rtc_is_valid()
+{
+    now(); // Allow a due TimeLib synchronization before checking status.
+    return timeStatus() == timeSet;
+}
+
 // Timestamp
 
 void rtc_get_timestamp(
