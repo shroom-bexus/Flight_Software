@@ -248,20 +248,28 @@ size_t telemetry_packet_target()
         static_cast<float>(ETHERNET_TELEMETRY_SLOT_US) /
         8000000.0f;
 
-    // For very low limits a single minimum frame needs more than one slot.
-    // Let the exact rate scheduler determine the spacing in that case.
-    if (slot_wire_bytes < static_cast<float>(MINIMUM_PACKET_BYTES))
+    // At low configured rates one minimum Ethernet frame does not fit in a
+    // 50 ms slot. In that case use the 200 ms budget as the packet target.
+    // If even that is smaller than a minimum frame, use one minimum frame and
+    // let the exact-rate scheduler space packets farther than 200 ms apart.
+    float target_wire_bytes = slot_wire_bytes;
+    if (target_wire_bytes < static_cast<float>(MINIMUM_PACKET_BYTES))
     {
-        return ETHERNET_UDP_PAYLOAD_MAX;
+        target_wire_bytes =
+            downlink_limit_kbit_s * 1000.0f *
+            static_cast<float>(ETHERNET_BURST_WINDOW_US) /
+            8000000.0f;
+    }
+    if (target_wire_bytes < static_cast<float>(MINIMUM_PACKET_BYTES))
+    {
+        target_wire_bytes = static_cast<float>(MINIMUM_PACKET_BYTES);
     }
 
-    const size_t wire_bytes = static_cast<size_t>(floorf(slot_wire_bytes));
-    if (wire_bytes <= PACKET_OVERHEAD_BYTES)
-    {
-        return ETHERNET_UDP_PAYLOAD_MAX;
-    }
-
-    const size_t payload_bytes = wire_bytes - PACKET_OVERHEAD_BYTES;
+    const size_t wire_bytes =
+        static_cast<size_t>(floorf(target_wire_bytes));
+    const size_t payload_bytes = wire_bytes > PACKET_OVERHEAD_BYTES
+        ? wire_bytes - PACKET_OVERHEAD_BYTES
+        : 1;
     return payload_bytes < ETHERNET_UDP_PAYLOAD_MAX
         ? payload_bytes
         : ETHERNET_UDP_PAYLOAD_MAX;
