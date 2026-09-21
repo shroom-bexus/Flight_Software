@@ -52,7 +52,10 @@ constexpr uint32_t MAX31865_SAMPLE_PERIOD_MS = 1000;
 constexpr uint32_t WSEN_PADS_SAMPLE_PERIOD_MS = 2000;
 constexpr uint32_t WSEN_HIDS_SAMPLE_PERIOD_MS = 4000;
 constexpr uint32_t WSEN_ISDS_SAMPLE_PERIOD_MS = 10;
+// Internal Secondary->Primary health cadence. Keep this fast for local fault detection.
 constexpr uint32_t HEALTH_TELEMETRY_PERIOD_MS = 5000;
+// Ground-station housekeeping cadence during flight. Sensor/science telemetry is unaffected.
+constexpr uint32_t SYSTEM_TELEMETRY_PERIOD_MS = 60000;
 
 // Storage
 // The built-in Teensy 4.1 card uses SDIO. The soldered Adafruit XTSD backup
@@ -176,7 +179,7 @@ constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {1, 2, 3, 4, 5, 6, 7
 // 2 Mbaud (8N1) provides 200 kB/s, above seven 115200-baud inputs.
 #define TEENSY_LINK_SERIAL Serial1
 constexpr uint32_t TEENSY_LINK_BAUD_RATE = 2000000;
-constexpr size_t AIRDOS_LINE_BUFFER_SIZE = 256;
+constexpr size_t AIRDOS_LINE_BUFFER_SIZE = 1024;
 constexpr size_t AIRDOS_UART_RX_BUFFER_SIZE = 4096;
 constexpr size_t TEENSY_LINK_BUFFER_SIZE = 32768;
 
@@ -220,14 +223,17 @@ constexpr uint16_t ETHERNET_UDP_PORT = 5000;
 constexpr size_t ETHERNET_RX_BUFFER_SIZE = 256;
 constexpr size_t ETHERNET_UDP_PAYLOAD_MAX = 1200;
 
-// Telemetry is queued line-by-line. Small system lines may share a compact
-// UDP packet, while each AIRDOS raw line stays in its own packet. This avoids
-// the old one-second mega-batches without wasting excessive Ethernet overhead.
-// System telemetry always has priority over AIRDOS raw data.
-constexpr size_t ETHERNET_TELEMETRY_LINE_MAX = 384;
-constexpr size_t ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX = 256;
+// Lossless binary records are queued and bundled into bounded UDP packets.
+// AIRDOS raw lines may be up to 1023 bytes; the prefixed telemetry line has
+// additional headroom while still fitting in one 1200-byte UDP datagram.
+// With a configured rate limit, regular telemetry is paced in 50 ms slots and
+// checked against a rolling 200 ms burst window.
+// The AIRDOS byte ring is 128 KiB, plus record descriptors.
+constexpr size_t ETHERNET_TELEMETRY_LINE_MAX = 1152;
 constexpr size_t ETHERNET_SYSTEM_QUEUE_DEPTH = 32;
-constexpr size_t ETHERNET_AIRDOS_QUEUE_DEPTH = 48;
+constexpr size_t ETHERNET_AIRDOS_QUEUE_DEPTH = 4096;
+constexpr uint32_t ETHERNET_TELEMETRY_SLOT_US = 50000;
+constexpr uint32_t ETHERNET_BURST_WINDOW_US = 200000;
 
 constexpr uint32_t ETHERNET_GROUND_STATION_TIMEOUT_MS = 60000;
 // 0 disables the limiter until the ground station applies its saved setting.
