@@ -550,23 +550,32 @@ bool send_mixed_packet()
     // datagram. This reduces overhead and avoids a burst of tiny system packets.
     size_t system_count = append_records(
         system_queue, payload, length, target);
-    size_t airdos_count = append_records(
-        airdos_queue, payload, length, target);
+    size_t airdos_count = 0;
 
-    // A single long record may be larger than the 50 ms target. Send it whole
-    // rather than fragmenting scientific data. Exact-rate and 200 ms guards
-    // then delay following packets as required.
-    if (system_count == 0 && airdos_count == 0)
+    // If the first system record is larger than the slot target, send that
+    // record alone. AIRDOS must never jump ahead of queued housekeeping.
+    if (!system_queue.empty() && system_count == 0)
     {
-        if (!system_queue.empty() &&
-            length + system_queue.front()->length <= sizeof(payload))
+        if (length + system_queue.front()->length <= sizeof(payload))
         {
             system_queue.copy(*system_queue.front(), payload + length);
             length += system_queue.front()->length;
             system_count = 1;
         }
-        else if (!airdos_queue.empty() &&
-                 length + airdos_queue.front()->length <= sizeof(payload))
+    }
+    else
+    {
+        airdos_count = append_records(
+            airdos_queue, payload, length, target);
+    }
+
+    // A single long AIRDOS record may be larger than the 50 ms target. Send it
+    // whole rather than fragmenting scientific data. Exact-rate and 200 ms
+    // guards then delay following packets as required.
+    if (system_count == 0 && airdos_count == 0 && system_queue.empty())
+    {
+        if (!airdos_queue.empty() &&
+            length + airdos_queue.front()->length <= sizeof(payload))
         {
             airdos_queue.copy(*airdos_queue.front(), payload + length);
             length += airdos_queue.front()->length;
