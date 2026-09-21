@@ -11,6 +11,7 @@
 #include "rtc.h"
 #include "storage_download.h"
 #include "telemetry.h"
+#include "teensy_link.h"
 
 #if ENABLE_AIRDOS
 #include "airdos.h"
@@ -180,16 +181,22 @@ void update_isds()
 void update_airdos()
 {
 #if ENABLE_AIRDOS
-    // Drain every complete UART line already waiting on every AIRDOS channel.
+    // Bound each channel visit so one busy sensor cannot starve the others.
     for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
     {
-        while (airdos_update(i))
+        for (uint8_t lines = 0; lines < 8 && airdos_update(i); ++lines)
         {
             const uint8_t sensor_id = airdos_get_sensor_id(i);
             const char* data = airdos_get_data(i);
 
             logger_log_airdos(sensor_id, data);
+#if FLIGHT_PRIMARY
             telemetry_send_airdos(sensor_id, data);
+#else
+            // Logging and forwarding are independent: an unavailable SD or
+            // full UART transmit buffer must not stop the other destination.
+            teensy_link_send_airdos(sensor_id, data);
+#endif
         }
     }
 #endif
@@ -213,6 +220,12 @@ void setup()
     // All enabled WSEN sensors share the main I2C bus.
     Wire.begin();
     Wire.setClock(I2C_CLOCK_HZ);
+#endif
+
+    // Start reception before potentially slow SD/sensor initialization.
+    teensy_link_init();
+#if ENABLE_AIRDOS
+    airdos_init();
 #endif
 
     print_init_result("RTC", rtc_init());
@@ -248,7 +261,6 @@ void setup()
     print_init_result("WSEN-ISDS", wsen_isds_init());
 #endif
 #if ENABLE_AIRDOS
-    airdos_init();
     Serial.println("AIRDOS: OK");
 #endif
 #if ENABLE_ETHERNET
@@ -266,12 +278,14 @@ void loop()
     if (storage_download_is_active()) return;
 
     // Cooperative scheduler: every module decides whether work is due.
+    teensy_link_update();
     update_ethernet();
     update_max31865();
     update_pads();
     update_hids();
     update_isds();
     update_airdos();
+    teensy_link_update();
     telemetry_update();
     logger_update();
 }

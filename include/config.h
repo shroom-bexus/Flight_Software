@@ -90,9 +90,9 @@ constexpr uint8_t MAX31865_CS_PINS[MAX31865_CHANNEL_COUNT] =
 };
 constexpr float MAX31865_RREF[MAX31865_CHANNEL_COUNT] =
 {
-    4300.0f, 4300.0f, 4300.0f,
-    4300.0f, 4300.0f, 4300.0f,
-    4300.0f, 4300.0f, 4300.0f
+    4291.0f, 4295.0f, 4302.0f,
+    4311.0f, 4290.0f, 4306.0f,
+    4296.0f, 4296.0f, 4292.0f
 };
 // T_calibrated = T_measured * scale + offset.
 constexpr float MAX31865_SCALE[MAX31865_CHANNEL_COUNT] =
@@ -130,6 +130,10 @@ constexpr float THERMAL_TARGET_K = 298.15f;
 constexpr float THERMAL_DEFAULT_KP = 0.0f; // % / K
 constexpr float THERMAL_DEFAULT_KI = 0.0f; // % / (K s)
 constexpr float THERMAL_DEFAULT_KD = 0.0f; // % s / K
+// Bang-bang hysteresis is the distance from target to either threshold.
+constexpr float THERMAL_DEFAULT_HYSTERESIS_K = 0.5f;
+constexpr float THERMAL_MAX_HYSTERESIS_K = 10.0f;
+constexpr float THERMAL_DEFAULT_BANG_BANG_POWER_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_PID_GAIN = 1000.0f;
 constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
@@ -163,12 +167,18 @@ constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {8, 9};
 #define AIRDOS_8_SERIAL Serial2
 #define AIRDOS_9_SERIAL Serial7
 #else
-// Secondary AIRDOS 1-7 are implemented separately later. Keep the existing
-// single-channel behavior until that integration is done.
-constexpr uint8_t AIRDOS_CHANNEL_COUNT = 1;
-constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {0};
-#define AIRDOS_LEGACY_SERIAL Serial7
+// PCB v2.2: AIRDOS 1-7 occupy Serial2 through Serial8.
+constexpr uint8_t AIRDOS_CHANNEL_COUNT = 7;
+constexpr uint8_t AIRDOS_SENSOR_IDS[AIRDOS_CHANNEL_COUNT] = {1, 2, 3, 4, 5, 6, 7};
 #endif
+
+// Inter-Teensy link: PCB TX_T/RX_T, Serial1 RX=0 / TX=1 on both boards.
+// 2 Mbaud (8N1) provides 200 kB/s, above seven 115200-baud inputs.
+#define TEENSY_LINK_SERIAL Serial1
+constexpr uint32_t TEENSY_LINK_BAUD_RATE = 2000000;
+constexpr size_t AIRDOS_LINE_BUFFER_SIZE = 256;
+constexpr size_t AIRDOS_UART_RX_BUFFER_SIZE = 4096;
+constexpr size_t TEENSY_LINK_BUFFER_SIZE = 32768;
 
 // AIRDOS raw-data downlink priority
 //
@@ -226,3 +236,4 @@ constexpr float ETHERNET_MIN_DOWNLINK_LIMIT_KBIT_S = 2.0f;
 constexpr float ETHERNET_MAX_DOWNLINK_LIMIT_KBIT_S = 10000.0f;
 
 #endif // FLIGHT_SOFTWARE_CONFIG_H
+
