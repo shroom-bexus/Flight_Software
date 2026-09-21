@@ -169,7 +169,7 @@ void telemetry_send_airdos(uint8_t sensor_id, const char* data)
 
     // AIRDOS raw messages may contain many comma-separated fields. Keep the
     // complete UART line unchanged after the sensor identifier.
-    char message[384];
+    char message[ETHERNET_TELEMETRY_LINE_MAX];
     const int length = snprintf(
         message,
         sizeof(message),
