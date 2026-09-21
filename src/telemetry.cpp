@@ -26,6 +26,7 @@
 namespace
 {
 uint32_t last_health_time = 0;
+bool system_telemetry_sent = false;
 
 const char* health_state(bool initialized, bool valid, uint32_t errors)
 {
@@ -194,8 +195,13 @@ void telemetry_update()
 
     // Health data is periodic and uses one timestamp for the complete batch.
     const uint32_t time_ms = millis();
-    if (time_ms - last_health_time < SYSTEM_TELEMETRY_PERIOD_MS) return;
+    if (system_telemetry_sent &&
+        time_ms - last_health_time < SYSTEM_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
     last_health_time = time_ms;
+    system_telemetry_sent = true;
 
     char message[96];
 
