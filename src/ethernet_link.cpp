@@ -18,6 +18,7 @@ namespace
 constexpr size_t PACKET_OVERHEAD_BYTES = 66;
 constexpr size_t MINIMUM_PACKET_BYTES = 84;
 constexpr uint32_t AIRDOS_BATCH_WAIT_MS = 20;
+constexpr size_t BURST_HISTORY_CAPACITY = 32;
 
 
 struct TelemetryLine
@@ -80,6 +81,8 @@ public:
     void clear() { head_=tail_=count_=byte_tail_=used_=0; }
     size_t size() const { return count_; }
     bool empty() const { return count_ == 0; }
+    size_t used_bytes() const { return used_; }
+    size_t byte_capacity() const { return sizeof(bytes_); }
 private:
     TelemetryLine lines_[Capacity];
     uint8_t bytes_[Capacity * (Capacity > 32 ? 32 : 128)];
@@ -103,6 +106,17 @@ LineQueue<ETHERNET_AIRDOS_QUEUE_DEPTH> airdos_queue;
 uint32_t telemetry_sequence = 0;
 float downlink_limit_kbit_s = ETHERNET_DEFAULT_DOWNLINK_LIMIT_KBIT_S;
 uint32_t next_regular_send_us = 0;
+uint32_t next_telemetry_slot_us = 0;
+
+struct BurstEntry
+{
+    uint32_t sent_us = 0;
+    uint32_t bits = 0;
+};
+BurstEntry burst_history[BURST_HISTORY_CAPACITY];
+size_t burst_head = 0;
+size_t burst_count = 0;
+uint32_t burst_bits = 0;
 
 uint8_t airdos_downlink_level = AIRDOS_DOWNLINK_MAX_LEVEL;
 uint32_t airdos_queue_high_since_ms = 0;
@@ -141,16 +155,134 @@ bool send_time_reached(uint32_t now_us, uint32_t target_us)
 }
 
 
+void reset_burst_history()
+{
+    burst_head = 0;
+    burst_count = 0;
+    burst_bits = 0;
+}
+
+
+void expire_burst_history(uint32_t now_us)
+{
+    while (burst_count > 0)
+    {
+        const BurstEntry& entry = burst_history[burst_head];
+        if (now_us - entry.sent_us < ETHERNET_BURST_WINDOW_US) break;
+        burst_bits -= entry.bits;
+        burst_head = (burst_head + 1) % BURST_HISTORY_CAPACITY;
+        --burst_count;
+    }
+}
+
+
+void record_sent_packet(size_t payload_bytes)
+{
+    if (downlink_limit_kbit_s == 0.0f) return;
+
+    const uint32_t now_us = micros();
+    expire_burst_history(now_us);
+    const uint32_t bits = static_cast<uint32_t>(
+        estimated_packet_bits(payload_bytes));
+
+    if (burst_count < BURST_HISTORY_CAPACITY)
+    {
+        const size_t index =
+            (burst_head + burst_count) % BURST_HISTORY_CAPACITY;
+        burst_history[index] = {now_us, bits};
+        ++burst_count;
+    }
+    else
+    {
+        // This can only happen under a burst of immediate command replies.
+        // Merge into the newest bucket and extend its lifetime. This is
+        // conservative: regular telemetry may wait longer, never shorter.
+        const size_t index =
+            (burst_head + burst_count - 1) % BURST_HISTORY_CAPACITY;
+        burst_history[index].bits += bits;
+        burst_history[index].sent_us = now_us;
+    }
+
+    burst_bits += bits;
+}
+
+
+uint32_t burst_limit_bits()
+{
+    if (downlink_limit_kbit_s == 0.0f) return UINT32_MAX;
+    return static_cast<uint32_t>(floorf(
+        downlink_limit_kbit_s * 1000.0f *
+        (static_cast<float>(ETHERNET_BURST_WINDOW_US) / 1000000.0f)
+    ));
+}
+
+
+bool burst_allows(size_t payload_bytes)
+{
+    if (downlink_limit_kbit_s == 0.0f) return true;
+
+    const uint32_t now_us = micros();
+    expire_burst_history(now_us);
+    const uint32_t packet_bits = static_cast<uint32_t>(
+        estimated_packet_bits(payload_bytes));
+    const uint32_t limit_bits = burst_limit_bits();
+
+    // At very small configured rates, one minimum Ethernet frame can exceed
+    // a 200 ms budget. Allow one only when the window is otherwise empty; the
+    // long-term rate scheduler still enforces the configured average.
+    if (packet_bits > limit_bits) return burst_count == 0;
+
+    return burst_bits <= limit_bits - packet_bits;
+}
+
+
+size_t telemetry_packet_target()
+{
+    if (downlink_limit_kbit_s == 0.0f)
+    {
+        return ETHERNET_UDP_PAYLOAD_MAX;
+    }
+
+    const float slot_wire_bytes =
+        downlink_limit_kbit_s * 1000.0f *
+        static_cast<float>(ETHERNET_TELEMETRY_SLOT_US) /
+        8000000.0f;
+
+    // For very low limits a single minimum frame needs more than one slot.
+    // Let the exact rate scheduler determine the spacing in that case.
+    if (slot_wire_bytes < static_cast<float>(MINIMUM_PACKET_BYTES))
+    {
+        return ETHERNET_UDP_PAYLOAD_MAX;
+    }
+
+    const size_t wire_bytes = static_cast<size_t>(floorf(slot_wire_bytes));
+    if (wire_bytes <= PACKET_OVERHEAD_BYTES)
+    {
+        return ETHERNET_UDP_PAYLOAD_MAX;
+    }
+
+    return min(
+        ETHERNET_UDP_PAYLOAD_MAX,
+        wire_bytes - PACKET_OVERHEAD_BYTES
+    );
+}
+
+
 void reset_rate_scheduler()
 {
-    next_regular_send_us = micros();
+    const uint32_t now_us = micros();
+    next_regular_send_us = now_us;
+    next_telemetry_slot_us = now_us;
+    reset_burst_history();
 }
 
 
 bool regular_send_ready()
 {
-    return downlink_limit_kbit_s == 0.0f ||
-        send_time_reached(micros(), next_regular_send_us);
+    if (downlink_limit_kbit_s == 0.0f) return true;
+    const uint32_t now_us = micros();
+    return send_time_reached(now_us, next_regular_send_us) &&
+        send_time_reached(now_us, next_telemetry_slot_us);
 }
 
 
@@ -169,9 +301,11 @@ void charge_downlink(size_t payload_bytes)
         ? now_us
         : next_regular_send_us;
 
-    // Priority packets are sent immediately, but their wire time is charged to
-    // the same schedule. Normal telemetry therefore waits afterwards.
+    // Immediate command replies can create rate debt. Regular telemetry never
+    // catches up in a burst: after any send it waits for a fresh 50 ms slot.
     next_regular_send_us = base_us + interval_us;
+    next_telemetry_slot_us = now_us + ETHERNET_TELEMETRY_SLOT_US;
+    record_sent_packet(payload_bytes);
 }
 
 
@@ -293,11 +427,17 @@ void update_airdos_downlink_level()
     }
 
     const uint32_t now_ms = millis();
-    const bool queue_high = queue_at_or_above_percent(
-        airdos_queue.size(),
-        ETHERNET_AIRDOS_QUEUE_DEPTH,
-        AIRDOS_DOWNLINK_QUEUE_HIGH_PERCENT
-    );
+    const bool queue_high =
+        queue_at_or_above_percent(
+            airdos_queue.size(),
+            ETHERNET_AIRDOS_QUEUE_DEPTH,
+            AIRDOS_DOWNLINK_QUEUE_HIGH_PERCENT
+        ) ||
+        queue_at_or_above_percent(
+            airdos_queue.used_bytes(),
+            airdos_queue.byte_capacity(),
+            AIRDOS_DOWNLINK_QUEUE_HIGH_PERCENT
+        );
 
     if (queue_high && airdos_downlink_level > 0)
     {
@@ -319,11 +459,17 @@ void update_airdos_downlink_level()
 
     airdos_queue_high_since_ms = 0;
 
-    const bool queue_low = queue_at_or_below_percent(
-        airdos_queue.size(),
-        ETHERNET_AIRDOS_QUEUE_DEPTH,
-        AIRDOS_DOWNLINK_QUEUE_LOW_PERCENT
-    );
+    const bool queue_low =
+        queue_at_or_below_percent(
+            airdos_queue.size(),
+            ETHERNET_AIRDOS_QUEUE_DEPTH,
+            AIRDOS_DOWNLINK_QUEUE_LOW_PERCENT
+        ) &&
+        queue_at_or_below_percent(
+            airdos_queue.used_bytes(),
+            airdos_queue.byte_capacity(),
+            AIRDOS_DOWNLINK_QUEUE_LOW_PERCENT
+        );
 
     if (!queue_low || airdos_downlink_level >= AIRDOS_DOWNLINK_MAX_LEVEL)
     {
@@ -350,7 +496,8 @@ bool send_regular_payload(const char* payload, size_t payload_length)
 {
     if (payload == nullptr || payload_length == 0) return false;
     if (payload_length > ETHERNET_UDP_PAYLOAD_MAX) return false;
-    if (!regular_send_ready() || !begin_datagram()) return false;
+    if (!regular_send_ready() || !burst_allows(payload_length) ||
+        !begin_datagram()) return false;
 
     udp.write(
         reinterpret_cast<const uint8_t*>(payload),
@@ -366,12 +513,13 @@ bool send_regular_payload(const char* payload, size_t payload_length)
 
 
 template <size_t Capacity>
-bool send_binary_packet(LineQueue<Capacity>& queue, size_t maximum)
+size_t append_records(
+    LineQueue<Capacity>& queue,
+    uint8_t* payload,
+    size_t& length,
+    size_t maximum
+)
 {
-    if (queue.empty() || !regular_send_ready()) return false;
-    uint8_t payload[ETHERNET_UDP_PAYLOAD_MAX];
-    binary_telemetry::header(payload, telemetry_sequence + 1);
-    size_t length = 8;
     size_t count = 0;
     while (count < queue.size())
     {
@@ -381,16 +529,60 @@ bool send_binary_packet(LineQueue<Capacity>& queue, size_t maximum)
         length += line.length;
         ++count;
     }
-    // A system line larger than the normal batching target still must drain.
-    if (count == 0 && length + queue.front()->length <= sizeof(payload))
+    return count;
+}
+
+
+bool send_mixed_packet()
+{
+    if ((system_queue.empty() && airdos_queue.empty()) ||
+        !regular_send_ready())
     {
-        queue.copy(*queue.front(), payload + length);
-        length += queue.front()->length;
-        count = 1;
+        return false;
     }
-    if (count == 0 || !send_regular_payload(
-            reinterpret_cast<const char*>(payload), length)) return false;
-    queue.pop(count);
+
+    uint8_t payload[ETHERNET_UDP_PAYLOAD_MAX];
+    binary_telemetry::header(payload, telemetry_sequence + 1);
+    size_t length = 8;
+    const size_t target = telemetry_packet_target();
+
+    // Housekeeping remains first, but AIRDOS fills unused space in the same
+    // datagram. This reduces overhead and avoids a burst of tiny system packets.
+    size_t system_count = append_records(
+        system_queue, payload, length, target);
+    size_t airdos_count = append_records(
+        airdos_queue, payload, length, target);
+
+    // A single long record may be larger than the 50 ms target. Send it whole
+    // rather than fragmenting scientific data. Exact-rate and 200 ms guards
+    // then delay following packets as required.
+    if (system_count == 0 && airdos_count == 0)
+    {
+        if (!system_queue.empty() &&
+            length + system_queue.front()->length <= sizeof(payload))
+        {
+            system_queue.copy(*system_queue.front(), payload + length);
+            length += system_queue.front()->length;
+            system_count = 1;
+        }
+        else if (!airdos_queue.empty() &&
+                 length + airdos_queue.front()->length <= sizeof(payload))
+        {
+            airdos_queue.copy(*airdos_queue.front(), payload + length);
+            length += airdos_queue.front()->length;
+            airdos_count = 1;
+        }
+    }
+
+    if (system_count == 0 && airdos_count == 0) return false;
+    if (!send_regular_payload(
+            reinterpret_cast<const char*>(payload), length))
+    {
+        return false;
+    }
+
+    system_queue.pop(system_count);
+    airdos_queue.pop(airdos_count);
     return true;
 }
 
@@ -399,15 +591,8 @@ void flush_telemetry()
 {
     if (!ethernet_link_connected()) return;
 
-    // Housekeeping/system telemetry always has priority over AIRDOS raw data.
-    if (!system_queue.empty())
-    {
-        send_binary_packet(system_queue, ETHERNET_SYSTEM_PACKET_PAYLOAD_MAX);
-        return;
-    }
-
     // A level reduction can make already queued AIRDOS lines ineligible.
-    // Remove them before selecting the next line to transmit.
+    // Remove them before building the next mixed packet.
     while (!airdos_queue.empty())
     {
         TelemetryLine* line = airdos_queue.front();
@@ -419,12 +604,21 @@ void flush_telemetry()
         ++airdos_suppressed_count;
     }
 
+    // System telemetry may send on the next available slot immediately.
+    if (!system_queue.empty())
+    {
+        send_mixed_packet();
+        return;
+    }
+
+    // With AIRDOS only, keep the short batching delay so a just-arrived record
+    // can share the next paced packet with neighbours from the same burst.
     TelemetryLine* line = airdos_queue.front();
     if (line != nullptr &&
         (millis() - line->queued_ms >= AIRDOS_BATCH_WAIT_MS ||
          airdos_queue.size() >= ETHERNET_AIRDOS_QUEUE_DEPTH / 2))
     {
-        send_binary_packet(airdos_queue, ETHERNET_UDP_PAYLOAD_MAX);
+        send_mixed_packet();
     }
 }
 
