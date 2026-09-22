@@ -88,6 +88,118 @@ bool bang_bang_power_valid(float value)
     return std::isfinite(value) && value >= 0.0f && value <= THERMAL_MAX_OUTPUT_PERCENT;
 }
 
+float fuse_temperatures(
+    const float* values,
+    uint8_t count,
+    ThermalFusionMode mode
+)
+{
+    if (values == nullptr || count == 0 || count > MAX31865_CHANNEL_COUNT)
+    {
+        return NAN;
+    }
+
+    if (mode == ThermalFusionMode::MEAN)
+    {
+        float sum = 0.0f;
+        for (uint8_t i = 0; i < count; ++i) sum += values[i];
+        return sum / static_cast<float>(count);
+    }
+
+    if (mode == ThermalFusionMode::MINIMUM)
+    {
+        float result = values[0];
+        for (uint8_t i = 1; i < count; ++i)
+            if (values[i] < result) result = values[i];
+        return result;
+    }
+
+    if (mode == ThermalFusionMode::MAXIMUM)
+    {
+        float result = values[0];
+        for (uint8_t i = 1; i < count; ++i)
+            if (values[i] > result) result = values[i];
+        return result;
+    }
+
+    // Median: sort a small local copy so the caller's samples remain unchanged.
+    float sorted[MAX31865_CHANNEL_COUNT];
+    for (uint8_t i = 0; i < count; ++i) sorted[i] = values[i];
+
+    for (uint8_t i = 1; i < count; ++i)
+    {
+        const float value = sorted[i];
+        uint8_t j = i;
+        while (j > 0 && sorted[j - 1] > value)
+        {
+            sorted[j] = sorted[j - 1];
+            --j;
+        }
+        sorted[j] = value;
+    }
+
+    const uint8_t middle = count / 2;
+    if ((count & 1U) != 0) return sorted[middle];
+    return (sorted[middle - 1] + sorted[middle]) * 0.5f;
+}
+
+bool get_control_temperature(float& temperature_k)
+{
+    float temperatures[THERMAL_CONTROL_SENSOR_COUNT];
+    uint8_t valid_count = 0;
+
+    for (uint8_t i = 0; i < THERMAL_CONTROL_SENSOR_COUNT; ++i)
+    {
+        const TempSensor sensor = THERMAL_CONTROL_SENSORS[i];
+
+        if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+        {
+            continue;
+        }
+
+        const float value = max31865_get_temperature(sensor);
+        if (!std::isfinite(value)) continue;
+
+        temperatures[valid_count++] = value;
+    }
+
+    if (valid_count < THERMAL_MIN_VALID_SENSORS)
+    {
+        temperature_k = NAN;
+        return false;
+    }
+
+    temperature_k = fuse_temperatures(
+        temperatures,
+        valid_count,
+        THERMAL_FUSION_MODE
+    );
+    return std::isfinite(temperature_k);
+}
+
+bool control_sensors_safe()
+{
+    // Safety is evaluated per physical sensor, not on the fused value. This
+    // prevents MEAN or MEDIAN from hiding one locally overheated sensor.
+    for (uint8_t i = 0; i < THERMAL_CONTROL_SENSOR_COUNT; ++i)
+    {
+        const TempSensor sensor = THERMAL_CONTROL_SENSORS[i];
+
+        if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+        {
+            continue;
+        }
+
+        const float value = max31865_get_temperature(sensor);
+        if (std::isfinite(value) && value >= THERMAL_MAX_TEMPERATURE_K)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void load_settings()
 {
     EEPROM.get(0, settings);
@@ -164,17 +276,20 @@ void thermal_control_init()
 
 void thermal_control_update()
 {
-    const TempSensor sensor = THERMAL_CONTROL_SENSOR;
-    // Never heat without a valid control sensor.
-    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+    float temperature_k = NAN;
+
+    // Only run when enough configured control sensors produced a fresh value.
+    // Invalid channels are excluded from fusion, but the configured minimum
+    // decides whether degraded operation is still permitted.
+    if (!get_control_temperature(temperature_k))
     {
         controller.enabled ? reset_controller() : heater_all_off();
         return;
     }
 
-    const float temperature_k = max31865_get_temperature(sensor);
-    // This cutoff also overrides stored manual heater outputs.
-    if (!std::isfinite(temperature_k) || temperature_k >= THERMAL_MAX_TEMPERATURE_K)
+    // This cutoff also overrides stored manual heater outputs. It is checked
+    // per sensor so one hot location cannot be hidden by sensor fusion.
+    if (!control_sensors_safe())
     {
         controller.enabled ? reset_controller() : heater_all_off();
         return;
@@ -260,9 +375,8 @@ float thermal_control_get_target()
 
 float thermal_control_get_temperature()
 {
-    const TempSensor sensor = THERMAL_CONTROL_SENSOR;
-    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor)) return NAN;
-    return max31865_get_temperature(sensor);
+    float temperature_k = NAN;
+    return get_control_temperature(temperature_k) ? temperature_k : NAN;
 }
 
 float thermal_control_get_kp()
