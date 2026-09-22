@@ -13,6 +13,7 @@
 #include "ethernet_link.h"
 #include "heater.h"
 #include "thermal_control.h"
+#include "telemetry.h"
 
 namespace
 {
@@ -103,7 +104,8 @@ void handle_scalar_setting(
     const char* args,
     const char* command,
     bool (*setter)(float),
-    const char* format
+    const char* format,
+    bool report_thermal_config = false
 )
 {
     float value;
@@ -121,6 +123,11 @@ void handle_scalar_setting(
     char detail[16];
     snprintf(detail, sizeof(detail), format, value);
     send_reply("ACK", command, detail);
+
+    if (report_thermal_config)
+    {
+        telemetry_send_thermal_config();
+    }
 }
 
 void handle_set_thermal_mode(const char* args)
@@ -131,6 +138,7 @@ void handle_set_thermal_mode(const char* args)
     else { send_reply("NACK", "SET_THERMAL_MODE", "INVALID_VALUE"); return; }
     thermal_control_set_mode(mode);
     send_reply("ACK", "SET_THERMAL_MODE", thermal_control_get_mode_name());
+    telemetry_send_thermal_config();
 }
 
 void handle_set_thermal_fusion(const char* args)
@@ -162,16 +170,29 @@ void handle_set_thermal_fusion(const char* args)
         "SET_THERMAL_FUSION",
         thermal_control_get_fusion_mode_name()
     );
+    telemetry_send_thermal_config();
 }
 
 void handle_set_hysteresis(const char* args)
 {
-    handle_scalar_setting(args, "SET_HYSTERESIS", thermal_control_set_hysteresis, "%.6g");
+    handle_scalar_setting(
+        args,
+        "SET_HYSTERESIS",
+        thermal_control_set_hysteresis,
+        "%.6g",
+        true
+    );
 }
 
 void handle_set_bang_bang_power(const char* args)
 {
-    handle_scalar_setting(args, "SET_BB_POWER", thermal_control_set_bang_bang_power, "%.6g");
+    handle_scalar_setting(
+        args,
+        "SET_BB_POWER",
+        thermal_control_set_bang_bang_power,
+        "%.6g",
+        true
+    );
 }
 
 void handle_set_target(const char* args)
