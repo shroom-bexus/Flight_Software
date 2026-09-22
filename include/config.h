@@ -135,7 +135,12 @@ constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
 // here and lower THERMAL_MIN_VALID_SENSORS only if degraded operation is wanted.
 constexpr TempSensor THERMAL_CONTROL_SENSORS[] =
 {
-    TempSensor::TEMP_1
+    TempSensor::TEMP_1,
+    TempSensor::TEMP_2,
+    TempSensor::TEMP_5,
+    TempSensor::TEMP_6,
+    TempSensor::TEMP_7,
+    TempSensor::TEMP_9
 };
 
 constexpr uint8_t THERMAL_CONTROL_SENSOR_COUNT =
