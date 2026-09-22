@@ -1,6 +1,7 @@
 // g++ -std=c++17 -DFLIGHT_PRIMARY=1 -Itest/host -Iinclude test/host/thermal_test.cpp -o /tmp/shroom-thermal-test
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include "../../src/thermal_control.cpp"
 FakeEEPROM EEPROM;
 float temperature = 298.15f, powers[4] = {};
