@@ -80,6 +80,26 @@ void telemetry_send_max31865(uint8_t sensor_id, float temperature_k)
 #endif
 }
 
+void telemetry_send_thermal_config()
+{
+#if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
+    if (!ethernet_link_connected()) return;
+
+    char message[96];
+    snprintf(
+        message,
+        sizeof(message),
+        "THERMAL_CONFIG,%lu,%s,%.6g,%.6g,%s",
+        static_cast<unsigned long>(millis()),
+        thermal_control_get_mode_name(),
+        thermal_control_get_hysteresis(),
+        thermal_control_get_bang_bang_power(),
+        thermal_control_get_fusion_mode_name()
+    );
+    ethernet_link_send_line(message);
+#endif
+}
+
 void telemetry_send_thermal()
 {
 #if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
@@ -340,17 +360,7 @@ void telemetry_update()
 #endif
 
 #if ENABLE_THERMAL_CONTROL
-    snprintf(
-        message,
-        sizeof(message),
-        "THERMAL_CONFIG,%lu,%s,%.6g,%.6g,%s",
-        static_cast<unsigned long>(time_ms),
-        thermal_control_get_mode_name(),
-        thermal_control_get_hysteresis(),
-        thermal_control_get_bang_bang_power(),
-        thermal_control_get_fusion_mode_name()
-    );
-    ethernet_link_send_line(message);
+    telemetry_send_thermal_config();
 #endif
 
     // Confirm the limiter state and AIRDOS selection policy at the ground
