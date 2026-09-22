@@ -28,7 +28,7 @@ struct ControllerState
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
-constexpr uint32_t SETTINGS_VERSION = 3;
+constexpr uint32_t SETTINGS_VERSION = 4;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -45,6 +45,7 @@ struct PersistentSettings
     ThermalMode mode;
     float hysteresis_k;
     float bang_bang_power;
+    ThermalFusionMode fusion_mode;
 };
 
 ControllerState controller;
@@ -76,6 +77,19 @@ void set_bang_bang_defaults()
     settings.mode = ThermalMode::PID;
     settings.hysteresis_k = THERMAL_DEFAULT_HYSTERESIS_K;
     settings.bang_bang_power = THERMAL_DEFAULT_BANG_BANG_POWER_PERCENT;
+}
+
+void set_fusion_default()
+{
+    settings.fusion_mode = THERMAL_DEFAULT_FUSION_MODE;
+}
+
+bool fusion_mode_valid(ThermalFusionMode mode)
+{
+    return mode == ThermalFusionMode::MEAN ||
+        mode == ThermalFusionMode::MEDIAN ||
+        mode == ThermalFusionMode::MINIMUM ||
+        mode == ThermalFusionMode::MAXIMUM;
 }
 
 bool hysteresis_valid(float value)
@@ -174,7 +188,7 @@ bool get_control_temperature(float& temperature_k)
     temperature_k = fuse_temperatures(
         temperatures,
         valid_count,
-        THERMAL_FUSION_MODE
+        settings.fusion_mode
     );
     return std::isfinite(temperature_k);
 }
@@ -215,30 +229,47 @@ void load_settings()
         settings.version = SETTINGS_VERSION;
         set_pid_defaults();
         set_bang_bang_defaults();
+        set_fusion_default();
         save_settings();
         return;
     }
 
     bool settings_changed = false;
+    const uint32_t stored_version = settings.version;
 
-    // Older settings did not contain PID gains. Preserve their other values.
-    if ((settings.version != 2 && settings.version != SETTINGS_VERSION) ||
+    // Version 2 already contained PID gains. Versions 3 and 4 keep the same
+    // prefix, so append-only migration preserves all operator settings.
+    if ((stored_version != 2 && stored_version != 3 &&
+         stored_version != SETTINGS_VERSION) ||
         !pid_values_valid(settings.kp, settings.ki, settings.kd))
     {
         set_pid_defaults();
         settings_changed = true;
     }
 
-    // Append-only migration preserves version-2 PID gains and operator settings.
-    if (settings.version != SETTINGS_VERSION ||
+    // Version 2 did not yet contain bang-bang settings. Version 3 did.
+    if (stored_version == 2 ||
         (settings.mode != ThermalMode::PID && settings.mode != ThermalMode::BANG_BANG) ||
         !hysteresis_valid(settings.hysteresis_k) ||
         !bang_bang_power_valid(settings.bang_bang_power))
     {
         set_bang_bang_defaults();
+        settings_changed = true;
+    }
+
+    // Fusion mode was appended in version 4.
+    if (stored_version < 4 || !fusion_mode_valid(settings.fusion_mode))
+    {
+        set_fusion_default();
+        settings_changed = true;
+    }
+
+    if (settings.version != SETTINGS_VERSION)
+    {
         settings.version = SETTINGS_VERSION;
         settings_changed = true;
     }
+
     if (settings_changed) save_settings();
 }
 
@@ -457,6 +488,38 @@ const char* thermal_control_get_mode_name()
 {
     return settings.mode == ThermalMode::BANG_BANG ? "BANG_BANG" : "PID";
 }
+
+ThermalFusionMode thermal_control_get_fusion_mode()
+{
+    return settings.fusion_mode;
+}
+
+const char* thermal_control_get_fusion_mode_name()
+{
+    switch (settings.fusion_mode)
+    {
+        case ThermalFusionMode::MEAN: return "MEAN";
+        case ThermalFusionMode::MEDIAN: return "MEDIAN";
+        case ThermalFusionMode::MINIMUM: return "MINIMUM";
+        case ThermalFusionMode::MAXIMUM: return "MAXIMUM";
+    }
+    return "UNKNOWN";
+}
+
+bool thermal_control_set_fusion_mode(ThermalFusionMode mode)
+{
+    if (!fusion_mode_valid(mode)) return false;
+    if (settings.fusion_mode == mode) return true;
+
+    settings.fusion_mode = mode;
+    save_settings();
+
+    // A changed measurement source invalidates PID derivative/integral history
+    // and bang-bang state, but does not change target or enable state.
+    if (controller.enabled) reset_controller();
+    return true;
+}
+
 float thermal_control_get_hysteresis() { return settings.hysteresis_k; }
 float thermal_control_get_bang_bang_power() { return settings.bang_bang_power; }
 
