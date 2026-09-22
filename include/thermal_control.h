@@ -6,10 +6,22 @@
 
 
 enum class ThermalMode : unsigned char { PID = 0, BANG_BANG = 1 };
+enum class ThermalFusionMode : unsigned char
+{
+    MEAN = 0,
+    MEDIAN = 1,
+    MINIMUM = 2,
+    MAXIMUM = 3
+};
 
 ThermalMode thermal_control_get_mode();
 const char* thermal_control_get_mode_name();
 bool thermal_control_set_mode(ThermalMode mode);
+
+ThermalFusionMode thermal_control_get_fusion_mode();
+const char* thermal_control_get_fusion_mode_name();
+bool thermal_control_set_fusion_mode(ThermalFusionMode mode);
+
 // Half-width in Kelvin: ON at target - h, OFF at target + h.
 float thermal_control_get_hysteresis();
 bool thermal_control_set_hysteresis(float hysteresis_k);
