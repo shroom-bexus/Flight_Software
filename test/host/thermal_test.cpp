@@ -18,6 +18,22 @@ void sample(float t, float expected) {
     for (float p : powers) assert(std::abs(p - expected) < 0.001f);
 }
 int main() {
+    // Sensor-fusion math is independent of the selected flight sensor list.
+    const float fusion_values[] = {294.0f, 300.0f, 298.0f, 296.0f};
+    assert(fuse_temperatures(fusion_values, 4, ThermalFusionMode::MEAN) == 297.0f);
+    assert(fuse_temperatures(fusion_values, 4, ThermalFusionMode::MEDIAN) == 297.0f);
+    assert(fuse_temperatures(fusion_values, 4, ThermalFusionMode::MINIMUM) == 294.0f);
+    assert(fuse_temperatures(fusion_values, 4, ThermalFusionMode::MAXIMUM) == 300.0f);
+
+    const float odd_values[] = {301.0f, 295.0f, 299.0f};
+    assert(fuse_temperatures(odd_values, 3, ThermalFusionMode::MEDIAN) == 299.0f);
+    assert(std::isnan(fuse_temperatures(nullptr, 0, ThermalFusionMode::MEAN)));
+    assert(std::isnan(fuse_temperatures(
+        fusion_values,
+        4,
+        static_cast<ThermalFusionMode>(99)
+    )));
+
     std::memset(EEPROM.bytes, 0xff, sizeof(EEPROM.bytes));
     thermal_control_init();
     assert(thermal_control_get_mode() == ThermalMode::PID);
