@@ -133,6 +133,37 @@ void handle_set_thermal_mode(const char* args)
     send_reply("ACK", "SET_THERMAL_MODE", thermal_control_get_mode_name());
 }
 
+void handle_set_thermal_fusion(const char* args)
+{
+    ThermalFusionMode mode;
+
+    if (std::strcmp(args, "MEAN") == 0)
+        mode = ThermalFusionMode::MEAN;
+    else if (std::strcmp(args, "MEDIAN") == 0)
+        mode = ThermalFusionMode::MEDIAN;
+    else if (std::strcmp(args, "MINIMUM") == 0)
+        mode = ThermalFusionMode::MINIMUM;
+    else if (std::strcmp(args, "MAXIMUM") == 0)
+        mode = ThermalFusionMode::MAXIMUM;
+    else
+    {
+        send_reply("NACK", "SET_THERMAL_FUSION", "INVALID_VALUE");
+        return;
+    }
+
+    if (!thermal_control_set_fusion_mode(mode))
+    {
+        send_reply("NACK", "SET_THERMAL_FUSION", "INVALID_VALUE");
+        return;
+    }
+
+    send_reply(
+        "ACK",
+        "SET_THERMAL_FUSION",
+        thermal_control_get_fusion_mode_name()
+    );
+}
+
 void handle_set_hysteresis(const char* args)
 {
     handle_scalar_setting(args, "SET_HYSTERESIS", thermal_control_set_hysteresis, "%.6g");
@@ -313,6 +344,7 @@ const CommandEntry command_table[] =
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
     {"SET_THERMAL_MODE", handle_set_thermal_mode},
+    {"SET_THERMAL_FUSION", handle_set_thermal_fusion},
     {"SET_HYSTERESIS", handle_set_hysteresis},
     {"SET_BB_POWER", handle_set_bang_bang_power},
     {"SET_PID", handle_set_pid},
