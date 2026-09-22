@@ -122,6 +122,8 @@ float fuse_temperatures(
         return result;
     }
 
+    if (mode != ThermalFusionMode::MEDIAN) return NAN;
+
     // Median: sort a small local copy so the caller's samples remain unchanged.
     float sorted[MAX31865_CHANNEL_COUNT];
     for (uint8_t i = 0; i < count; ++i) sorted[i] = values[i];
