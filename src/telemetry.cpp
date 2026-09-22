@@ -340,9 +340,16 @@ void telemetry_update()
 #endif
 
 #if ENABLE_THERMAL_CONTROL
-    snprintf(message, sizeof(message), "THERMAL_CONFIG,%lu,%s,%.6g,%.6g",
-        static_cast<unsigned long>(time_ms), thermal_control_get_mode_name(),
-        thermal_control_get_hysteresis(), thermal_control_get_bang_bang_power());
+    snprintf(
+        message,
+        sizeof(message),
+        "THERMAL_CONFIG,%lu,%s,%.6g,%.6g,%s",
+        static_cast<unsigned long>(time_ms),
+        thermal_control_get_mode_name(),
+        thermal_control_get_hysteresis(),
+        thermal_control_get_bang_bang_power(),
+        thermal_control_get_fusion_mode_name()
+    );
     ethernet_link_send_line(message);
 #endif
 
