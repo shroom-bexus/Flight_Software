@@ -128,7 +128,45 @@ constexpr float HEATER_MAX_POWER_PERCENT[HEATER_CHANNEL_COUNT] =
 constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
 
 // Thermal control
-constexpr TempSensor THERMAL_CONTROL_SENSOR = TempSensor::TEMP_1;
+enum class ThermalFusionMode : uint8_t
+{
+    MEAN,
+    MEDIAN,
+    MINIMUM,
+    MAXIMUM
+};
+
+// Sensors participating in the control temperature. TEMP_1 remains the
+// default so the controller behaves exactly as before until the final sensor
+// assignment is known. To use six sensors, list those six TempSensor entries
+// here and lower THERMAL_MIN_VALID_SENSORS only if degraded operation is wanted.
+constexpr TempSensor THERMAL_CONTROL_SENSORS[] =
+{
+    TempSensor::TEMP_1
+};
+
+constexpr uint8_t THERMAL_CONTROL_SENSOR_COUNT =
+    sizeof(THERMAL_CONTROL_SENSORS) / sizeof(THERMAL_CONTROL_SENSORS[0]);
+
+constexpr ThermalFusionMode THERMAL_FUSION_MODE =
+    ThermalFusionMode::MEAN;
+
+// By default every configured control sensor must be valid. For example, with
+// six configured sensors this can be set to 4 for a 4-of-6 degraded mode.
+constexpr uint8_t THERMAL_MIN_VALID_SENSORS =
+    THERMAL_CONTROL_SENSOR_COUNT;
+
+static_assert(
+    THERMAL_CONTROL_SENSOR_COUNT > 0 &&
+    THERMAL_CONTROL_SENSOR_COUNT <= MAX31865_CHANNEL_COUNT,
+    "Thermal control sensor list must contain 1..9 sensors."
+);
+static_assert(
+    THERMAL_MIN_VALID_SENSORS > 0 &&
+    THERMAL_MIN_VALID_SENSORS <= THERMAL_CONTROL_SENSOR_COUNT,
+    "THERMAL_MIN_VALID_SENSORS must fit the configured sensor list."
+);
+
 constexpr float THERMAL_TARGET_K = 298.15f;
 constexpr float THERMAL_DEFAULT_KP = 0.0f; // % / K
 constexpr float THERMAL_DEFAULT_KI = 0.0f; // % / (K s)
