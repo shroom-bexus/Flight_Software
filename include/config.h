@@ -7,6 +7,7 @@
 #include <Arduino.h>
 
 #include "max31865.h"
+#include "thermal_control.h"
 
 // Build target (set by platformio.ini)
 #ifndef FLIGHT_PRIMARY
@@ -128,14 +129,6 @@ constexpr float HEATER_MAX_POWER_PERCENT[HEATER_CHANNEL_COUNT] =
 constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
 
 // Thermal control
-enum class ThermalFusionMode : uint8_t
-{
-    MEAN,
-    MEDIAN,
-    MINIMUM,
-    MAXIMUM
-};
-
 // Sensors participating in the control temperature. TEMP_1 remains the
 // default so the controller behaves exactly as before until the final sensor
 // assignment is known. To use six sensors, list those six TempSensor entries
@@ -148,7 +141,7 @@ constexpr TempSensor THERMAL_CONTROL_SENSORS[] =
 constexpr uint8_t THERMAL_CONTROL_SENSOR_COUNT =
     sizeof(THERMAL_CONTROL_SENSORS) / sizeof(THERMAL_CONTROL_SENSORS[0]);
 
-constexpr ThermalFusionMode THERMAL_FUSION_MODE =
+constexpr ThermalFusionMode THERMAL_DEFAULT_FUSION_MODE =
     ThermalFusionMode::MEAN;
 
 // By default every configured control sensor must be valid. For example, with
