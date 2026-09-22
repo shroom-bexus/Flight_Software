@@ -37,6 +37,14 @@ int main() {
     std::memset(EEPROM.bytes, 0xff, sizeof(EEPROM.bytes));
     thermal_control_init();
     assert(thermal_control_get_mode() == ThermalMode::PID);
+    assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MEAN);
+    assert(std::strcmp(thermal_control_get_fusion_mode_name(), "MEAN") == 0);
+    assert(!thermal_control_set_fusion_mode(static_cast<ThermalFusionMode>(99)));
+    assert(thermal_control_set_fusion_mode(ThermalFusionMode::MAXIMUM));
+    assert(std::strcmp(thermal_control_get_fusion_mode_name(), "MAXIMUM") == 0);
+    thermal_control_init();
+    assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MAXIMUM);
+    assert(thermal_control_set_fusion_mode(ThermalFusionMode::MEAN));
     assert(thermal_control_set_pid(2, 0, 0));
     sample(297.15f, 2);
     assert(thermal_control_set_bang_bang_power(30));
@@ -82,8 +90,28 @@ int main() {
     std::memset(EEPROM.bytes, 0xff, sizeof(EEPROM.bytes)); EEPROM.put(0, old);
     thermal_control_init();
     assert(thermal_control_get_mode() == ThermalMode::PID);
+    assert(thermal_control_get_fusion_mode() == THERMAL_DEFAULT_FUSION_MODE);
     assert(thermal_control_get_kp() == 3 && thermal_control_get_ki() == 4 && thermal_control_get_kd() == 5);
     assert(thermal_control_get_target() == 300 && !thermal_control_is_enabled());
     sample(299, 11);
+
+    // Version 3 already contained bang-bang settings but no fusion mode.
+    struct V3 {
+        uint32_t magic; bool enabled; float target; float power[4];
+        uint32_t version; float kp, ki, kd; ThermalMode mode;
+        float hysteresis, bb_power;
+    };
+    V3 old3{
+        SETTINGS_MAGIC, true, 301, {0,0,0,0}, 3, 8, 0.01f, 0.5f,
+        ThermalMode::BANG_BANG, 1.25f, 35.0f
+    };
+    std::memset(EEPROM.bytes, 0xff, sizeof(EEPROM.bytes)); EEPROM.put(0, old3);
+    thermal_control_init();
+    assert(thermal_control_get_mode() == ThermalMode::BANG_BANG);
+    assert(thermal_control_get_hysteresis() == 1.25f);
+    assert(thermal_control_get_bang_bang_power() == 35.0f);
+    assert(thermal_control_get_fusion_mode() == THERMAL_DEFAULT_FUSION_MODE);
+    assert(thermal_control_get_target() == 301);
+
     puts("Thermal controller regression checks passed");
 }
