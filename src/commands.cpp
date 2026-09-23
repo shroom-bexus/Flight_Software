@@ -379,7 +379,9 @@ void handle_set_heater(const char* args)
         }
 
         heater_set_power(heater, power_percent);
-        thermal_control_save_heater_state();
+        thermal_control_save_heater_power(
+            static_cast<uint8_t>(heater_number - 1)
+        );
         thermal_control_enforce_plate_limit();
         snprintf(
             detail,
