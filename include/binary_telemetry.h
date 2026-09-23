@@ -5,7 +5,7 @@
 #include <cstring>
 
 namespace binary_telemetry {
-constexpr const char* dictionary[] = {"AIRDOS", "$E", "$START", "$STOP", "$ENV", "HEALTH", "PADS", "THERMAL", "MAX31865", "RTC", "OK", "FAULT", "PLATE_LIMIT"};
+constexpr const char* dictionary[] = {"AIRDOS", "$E", "$START", "$STOP", "$ENV", "HEALTH", "PADS", "THERMAL", "MAX31865", "RTC", "OK", "FAULT"};
 inline void u16(uint8_t* p, size_t n) { p[0]=n; p[1]=n>>8; }
 inline void header(uint8_t* p, uint32_t sequence) {
     std::memcpy(p,"SHB1",4);
