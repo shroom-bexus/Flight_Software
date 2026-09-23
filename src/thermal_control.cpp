@@ -319,7 +319,7 @@ void load_settings()
     // Version 2 already contained PID gains. Versions 3 and 4 keep the same
     // prefix, so append-only migration preserves all operator settings.
     if ((stored_version != 2 && stored_version != 3 &&
-         stored_version != SETTINGS_VERSION) ||
+         stored_version != 4 && stored_version != SETTINGS_VERSION) ||
         !pid_values_valid(settings.kp, settings.ki, settings.kd))
     {
         set_pid_defaults();
