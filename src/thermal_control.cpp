@@ -612,7 +612,6 @@ float thermal_control_get_plate_temperature()
 
 bool thermal_control_plate_limit_tripped()
 {
-    update_plate_limit_state();
     return controller.plate_limit_tripped;
 }
 
