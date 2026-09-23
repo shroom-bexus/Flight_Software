@@ -4,18 +4,25 @@
 #include <cstring>
 #include "../../src/thermal_control.cpp"
 FakeEEPROM EEPROM;
-float temperature = 298.15f, powers[4] = {};
-bool valid = true, sensor_enabled = true;
+float temperature = 298.15f, plate_temperature = 298.15f, powers[4] = {};
+bool valid = true, plate_valid = true, sensor_enabled = true;
 
 bool max31865_is_enabled(TempSensor) { return sensor_enabled; }
-bool max31865_data_valid(TempSensor) { return valid; }
-float max31865_get_temperature(TempSensor) { return temperature; }
+bool max31865_data_valid(TempSensor sensor) {
+    return sensor == HEATING_PLATE_TEMP_SENSOR ? plate_valid : valid;
+}
+float max31865_get_temperature(TempSensor sensor) {
+    return sensor == HEATING_PLATE_TEMP_SENSOR ? plate_temperature : temperature;
+}
 void heater_set_power(Heater h, float p) { powers[static_cast<unsigned>(h)] = p; }
 float heater_get_power(Heater h) { return powers[static_cast<unsigned>(h)]; }
 void heater_set_all_power(float p) { for (float& v : powers) v = p; }
 void heater_all_off() { heater_set_all_power(0); }
 void sample(float t, float expected) {
-    temperature = t; fake_time += 1000; thermal_control_update();
+    temperature = t;
+    plate_temperature = t;
+    fake_time += 1000;
+    thermal_control_update();
     for (float p : powers) assert(std::abs(p - expected) < 0.001f);
 }
 int main() {
@@ -67,6 +74,16 @@ int main() {
     sample(299.5f, 0);
     sample(298.5f, 30);
     assert(!thermal_control_plate_limit_tripped());
+
+    // The plate sensor itself is fail-safe independently of the fused control
+    // sensors: losing TEMP_3 inhibits heating until a valid cool sample returns.
+    plate_valid = false;
+    sample(298.5f, 0);
+    assert(thermal_control_plate_limit_tripped());
+    plate_valid = true;
+    sample(298.5f, 30);
+    assert(!thermal_control_plate_limit_tripped());
+
     thermal_control_init();
     assert(thermal_control_plate_limit_is_enabled());
     assert(std::abs(thermal_control_get_plate_limit() - 300.0f) < 0.001f);
