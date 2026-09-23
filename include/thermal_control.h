@@ -4,6 +4,7 @@
 #ifndef FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 #define FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 
+#include <stdint.h>
 
 enum class ThermalMode : unsigned char { PID = 0, BANG_BANG = 1 };
 enum class ThermalFusionMode : unsigned char
@@ -117,9 +118,16 @@ void thermal_control_set_enabled(bool enabled);
 bool thermal_control_is_enabled();
 
 /**
- * @brief Store the current manual heater outputs.
+ * @brief Store all current manual heater outputs.
  */
 void thermal_control_save_heater_state();
+
+/**
+ * @brief Store one current manual heater output without overwriting the others.
+ *
+ * @param heater_index Zero-based heater index.
+ */
+void thermal_control_save_heater_power(uint8_t heater_index);
 
 /** @brief Enable or disable the heating-plate temperature limiter. */
 void thermal_control_set_plate_limit_enabled(bool enabled);
