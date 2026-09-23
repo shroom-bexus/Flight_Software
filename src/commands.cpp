@@ -366,6 +366,7 @@ void handle_set_heater(const char* args)
         heater_set_all_power(power_percent);
         // Persist the manual output so it survives a reset.
         thermal_control_save_heater_state();
+        thermal_control_enforce_plate_limit();
         snprintf(detail, sizeof(detail), "ALL,%.1f", power_percent);
     }
     else
@@ -379,6 +380,7 @@ void handle_set_heater(const char* args)
 
         heater_set_power(heater, power_percent);
         thermal_control_save_heater_state();
+        thermal_control_enforce_plate_limit();
         snprintf(
             detail,
             sizeof(detail),
