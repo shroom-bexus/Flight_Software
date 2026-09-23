@@ -84,6 +84,35 @@ int main() {
     sample(298.5f, 30);
     assert(!thermal_control_plate_limit_tripped());
 
+    // A single manual command while the limiter is tripped must update only
+    // that logical setpoint. Other limiter-forced physical zeroes must not be
+    // written back into EEPROM.
+    thermal_control_set_enabled(false);
+    heater_set_power(Heater::HEATER_1, 10);
+    heater_set_power(Heater::HEATER_2, 20);
+    heater_set_power(Heater::HEATER_3, 30);
+    heater_set_power(Heater::HEATER_4, 40);
+    thermal_control_save_heater_state();
+
+    plate_temperature = 301.0f;
+    thermal_control_enforce_plate_limit();
+    for (float p : powers) assert(p == 0);
+
+    heater_set_power(Heater::HEATER_1, 55);
+    thermal_control_save_heater_power(0);
+    thermal_control_enforce_plate_limit();
+    for (float p : powers) assert(p == 0);
+
+    temperature = 298.5f;
+    plate_temperature = 298.5f;
+    fake_time += 1000;
+    thermal_control_update();
+    assert(powers[0] == 55);
+    assert(powers[1] == 20);
+    assert(powers[2] == 30);
+    assert(powers[3] == 40);
+
+    thermal_control_set_enabled(true);
     thermal_control_init();
     assert(thermal_control_plate_limit_is_enabled());
     assert(std::abs(thermal_control_get_plate_limit() - 300.0f) < 0.001f);
