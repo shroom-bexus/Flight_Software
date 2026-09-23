@@ -146,5 +146,31 @@ int main() {
         thermal_control_get_plate_limit() - HEATING_PLATE_LIMIT_DEFAULT_K
     ) < 0.001f);
 
+    // Version 4 added fusion but predates the plate limiter. Preserve all v4
+    // thermal settings and initialize only the newly appended plate fields.
+    struct V4 {
+        uint32_t magic; bool enabled; float target; float power[4];
+        uint32_t version; float kp, ki, kd; ThermalMode mode;
+        float hysteresis, bb_power; ThermalFusionMode fusion_mode;
+    };
+    V4 old4{
+        SETTINGS_MAGIC, true, 302, {0,0,0,0}, 4, 7, 0.02f, 0.4f,
+        ThermalMode::BANG_BANG, 0.75f, 42.0f, ThermalFusionMode::MAXIMUM
+    };
+    std::memset(EEPROM.bytes, 0xff, sizeof(EEPROM.bytes)); EEPROM.put(0, old4);
+    thermal_control_init();
+    assert(thermal_control_get_kp() == 7);
+    assert(thermal_control_get_ki() == 0.02f);
+    assert(thermal_control_get_kd() == 0.4f);
+    assert(thermal_control_get_mode() == ThermalMode::BANG_BANG);
+    assert(thermal_control_get_hysteresis() == 0.75f);
+    assert(thermal_control_get_bang_bang_power() == 42.0f);
+    assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MAXIMUM);
+    assert(thermal_control_get_target() == 302);
+    assert(!thermal_control_plate_limit_is_enabled());
+    assert(std::abs(
+        thermal_control_get_plate_limit() - HEATING_PLATE_LIMIT_DEFAULT_K
+    ) < 0.001f);
+
     puts("Thermal controller regression checks passed");
 }
