@@ -205,6 +205,34 @@ Validation: host-side regression tests exercise the real controller source with
 simulated EEPROM, sensor and heater interfaces. Hardware timing, PWM and thermal
 response still require a Teensy bench test before use.
 
+## Heating-plate temperature limit
+
+A separate heating-plate limiter can override PID, bang-bang, and manual heater
+commands. Its hardware assignment is centralized in `include/config.h`:
+
+```cpp
+constexpr TempSensor HEATING_PLATE_TEMP_SENSOR = TempSensor::TEMP_3;
+constexpr uint8_t HEATING_PLATE_HEATER = 0;
+```
+
+`HEATING_PLATE_HEATER = 0` protects all heater channels; values 1..4 protect
+one physical heater channel. This default avoids assuming a final heater/plate
+wiring assignment while retaining the existing "all heaters as one thermal
+mass" behavior. Change only the config value when the final channel is known.
+
+The fresh-setting limit is 50 °C and disabled. The GS can enable/disable it or
+set 0..100 °C with `platelimit on`, `platelimit off`, and
+`platelimit <°C>`. Settings survive reset. Once the configured plate
+temperature reaches the limit, the selected heater output is forced to zero and
+remains inhibited until the plate is at least 1 K below the limit. If the limit
+is enabled and the configured plate sensor is invalid or unavailable, heating is
+inhibited fail-safe.
+
+The flight computer reports
+`PLATE_LIMIT,time_ms,enabled,limit_K,temperature_K,tripped,sensor,heater`.
+Heater 0 means all heater channels. This state is shown by the terminal GS and
+logged to `plate_limit.csv`.
+
 ## Independent storage health
 
 Every five seconds the Primary sends separate messages for its own storage

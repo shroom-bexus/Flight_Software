@@ -12,6 +12,9 @@ void telemetry_send_thermal();
 /** @brief Send the current thermal configuration immediately. */
 void telemetry_send_thermal_config();
 
+/** @brief Send the current heating-plate limiter state immediately. */
+void telemetry_send_plate_limit();
+
 /** @brief Send one valid MAX31865 temperature measurement. */
 void telemetry_send_max31865(uint8_t sensor_id, float temperature_k);
 

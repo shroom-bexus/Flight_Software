@@ -177,6 +177,24 @@ constexpr float THERMAL_MAX_PID_GAIN = 1000.0f;
 constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
 
+// Heating-plate temperature limiter
+// TEMP_3 is the temperature sensor mounted on the heating plate.
+// HEATING_PLATE_HEATER selects which heater output is inhibited when the
+// limiter trips: 0 = all heaters, 1..4 = one physical heater channel.
+constexpr TempSensor HEATING_PLATE_TEMP_SENSOR = TempSensor::TEMP_3;
+constexpr uint8_t HEATING_PLATE_HEATER = 0;
+constexpr bool HEATING_PLATE_LIMIT_DEFAULT_ENABLED = false;
+constexpr float HEATING_PLATE_LIMIT_DEFAULT_K = 323.15f; // 50 °C
+constexpr float HEATING_PLATE_LIMIT_MIN_K = 273.15f;     // 0 °C
+constexpr float HEATING_PLATE_LIMIT_MAX_K = 373.15f;     // 100 °C
+// Once tripped, heating is allowed again only below limit - hysteresis.
+constexpr float HEATING_PLATE_LIMIT_HYSTERESIS_K = 1.0f;
+
+static_assert(
+    HEATING_PLATE_HEATER <= HEATER_CHANNEL_COUNT,
+    "HEATING_PLATE_HEATER must be 0 (all) or a heater number from 1..4."
+);
+
 // WSEN sensors
 constexpr uint8_t WSEN_PADS_ADDRESS = 0x5D;
 constexpr uint16_t WSEN_PADS_ODR_HZ = 10;
