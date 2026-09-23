@@ -24,11 +24,12 @@ struct ControllerState
     bool bang_bang_on = false;
     bool initialized = false;
     bool enabled = true;
+    bool plate_limit_tripped = false;
 };
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
-constexpr uint32_t SETTINGS_VERSION = 4;
+constexpr uint32_t SETTINGS_VERSION = 5;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -46,6 +47,8 @@ struct PersistentSettings
     float hysteresis_k;
     float bang_bang_power;
     ThermalFusionMode fusion_mode;
+    bool plate_limit_enabled;
+    float plate_limit_k;
 };
 
 ControllerState controller;
@@ -82,6 +85,19 @@ void set_bang_bang_defaults()
 void set_fusion_default()
 {
     settings.fusion_mode = THERMAL_DEFAULT_FUSION_MODE;
+}
+
+void set_plate_limit_defaults()
+{
+    settings.plate_limit_enabled = HEATING_PLATE_LIMIT_DEFAULT_ENABLED;
+    settings.plate_limit_k = HEATING_PLATE_LIMIT_DEFAULT_K;
+}
+
+bool plate_limit_value_valid(float value)
+{
+    return std::isfinite(value) &&
+        value >= HEATING_PLATE_LIMIT_MIN_K &&
+        value <= HEATING_PLATE_LIMIT_MAX_K;
 }
 
 bool fusion_mode_valid(ThermalFusionMode mode)
@@ -216,6 +232,68 @@ bool control_sensors_safe()
     return true;
 }
 
+bool plate_heater_selected(Heater heater)
+{
+    if (HEATING_PLATE_HEATER == 0) return true;
+    return static_cast<uint8_t>(heater) + 1 == HEATING_PLATE_HEATER;
+}
+
+bool read_plate_temperature(float& temperature_k)
+{
+    const TempSensor sensor = HEATING_PLATE_TEMP_SENSOR;
+    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+    {
+        temperature_k = NAN;
+        return false;
+    }
+
+    temperature_k = max31865_get_temperature(sensor);
+    return std::isfinite(temperature_k);
+}
+
+void update_plate_limit_state()
+{
+    if (!settings.plate_limit_enabled)
+    {
+        controller.plate_limit_tripped = false;
+        return;
+    }
+
+    float temperature_k = NAN;
+    if (!read_plate_temperature(temperature_k))
+    {
+        // Fail safe: an enabled limiter never permits heating without a valid
+        // temperature from the configured plate sensor.
+        controller.plate_limit_tripped = true;
+        return;
+    }
+
+    if (controller.plate_limit_tripped)
+    {
+        if (temperature_k <=
+            settings.plate_limit_k - HEATING_PLATE_LIMIT_HYSTERESIS_K)
+        {
+            controller.plate_limit_tripped = false;
+        }
+    }
+    else if (temperature_k >= settings.plate_limit_k)
+    {
+        controller.plate_limit_tripped = true;
+    }
+}
+
+void apply_plate_limit_to_outputs()
+{
+    update_plate_limit_state();
+    if (!controller.plate_limit_tripped) return;
+
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+    {
+        const Heater heater = static_cast<Heater>(i);
+        if (plate_heater_selected(heater)) heater_off(heater);
+    }
+}
+
 void load_settings()
 {
     EEPROM.get(0, settings);
@@ -230,6 +308,7 @@ void load_settings()
         set_pid_defaults();
         set_bang_bang_defaults();
         set_fusion_default();
+        set_plate_limit_defaults();
         save_settings();
         return;
     }
@@ -264,6 +343,14 @@ void load_settings()
         settings_changed = true;
     }
 
+    // Heating-plate limiter settings were appended in version 5.
+    if (stored_version != SETTINGS_VERSION ||
+        !plate_limit_value_valid(settings.plate_limit_k))
+    {
+        set_plate_limit_defaults();
+        settings_changed = true;
+    }
+
     if (settings.version != SETTINGS_VERSION)
     {
         settings.version = SETTINGS_VERSION;
@@ -294,6 +381,7 @@ void apply_output(float output_percent)
         THERMAL_MAX_OUTPUT_PERCENT
     );
     heater_set_all_power(controller.output_percent);
+    apply_plate_limit_to_outputs();
 }
 } // namespace
 
@@ -335,6 +423,7 @@ void thermal_control_update()
         {
             heater_set_power(static_cast<Heater>(i), settings.heater_power[i]);
         }
+        apply_plate_limit_to_outputs();
         return;
     }
 
@@ -480,6 +569,56 @@ void thermal_control_save_heater_state()
         settings.heater_power[i] = heater_get_power(static_cast<Heater>(i));
     }
     save_settings();
+}
+
+void thermal_control_set_plate_limit_enabled(bool enabled)
+{
+    if (settings.plate_limit_enabled == enabled)
+    {
+        thermal_control_enforce_plate_limit();
+        return;
+    }
+
+    settings.plate_limit_enabled = enabled;
+    save_settings();
+    thermal_control_enforce_plate_limit();
+}
+
+bool thermal_control_plate_limit_is_enabled()
+{
+    return settings.plate_limit_enabled;
+}
+
+bool thermal_control_set_plate_limit(float limit_k)
+{
+    if (!plate_limit_value_valid(limit_k)) return false;
+
+    settings.plate_limit_k = limit_k;
+    save_settings();
+    thermal_control_enforce_plate_limit();
+    return true;
+}
+
+float thermal_control_get_plate_limit()
+{
+    return settings.plate_limit_k;
+}
+
+float thermal_control_get_plate_temperature()
+{
+    float temperature_k = NAN;
+    return read_plate_temperature(temperature_k) ? temperature_k : NAN;
+}
+
+bool thermal_control_plate_limit_tripped()
+{
+    update_plate_limit_state();
+    return controller.plate_limit_tripped;
+}
+
+void thermal_control_enforce_plate_limit()
+{
+    apply_plate_limit_to_outputs();
 }
 
 
