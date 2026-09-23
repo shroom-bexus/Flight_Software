@@ -571,6 +571,16 @@ void thermal_control_save_heater_state()
     save_settings();
 }
 
+void thermal_control_save_heater_power(uint8_t heater_index)
+{
+    if (heater_index >= HEATER_CHANNEL_COUNT) return;
+
+    settings.heater_power[heater_index] = heater_get_power(
+        static_cast<Heater>(heater_index)
+    );
+    save_settings();
+}
+
 void thermal_control_set_plate_limit_enabled(bool enabled)
 {
     if (settings.plate_limit_enabled == enabled)
