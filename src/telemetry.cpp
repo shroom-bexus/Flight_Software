@@ -100,6 +100,29 @@ void telemetry_send_thermal_config()
 #endif
 }
 
+void telemetry_send_plate_limit()
+{
+#if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
+    if (!ethernet_link_connected()) return;
+
+    const float plate_temperature_k = thermal_control_get_plate_temperature();
+    char message[96];
+    snprintf(
+        message,
+        sizeof(message),
+        "PLATE_LIMIT,%lu,%u,%.2f,%.3f,%u,%u,%u",
+        static_cast<unsigned long>(millis()),
+        thermal_control_plate_limit_is_enabled() ? 1 : 0,
+        thermal_control_get_plate_limit(),
+        plate_temperature_k,
+        thermal_control_plate_limit_tripped() ? 1 : 0,
+        static_cast<unsigned int>(HEATING_PLATE_TEMP_SENSOR) + 1,
+        static_cast<unsigned int>(HEATING_PLATE_HEATER)
+    );
+    ethernet_link_send_line(message);
+#endif
+}
+
 void telemetry_send_thermal()
 {
 #if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
@@ -143,6 +166,8 @@ void telemetry_send_thermal()
         heater_get_power(Heater::HEATER_4)
     );
     ethernet_link_send_line(message);
+
+    telemetry_send_plate_limit();
 #endif
 }
 
