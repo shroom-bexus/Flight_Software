@@ -105,6 +105,9 @@ void telemetry_send_plate_limit()
 #if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
     if (!ethernet_link_connected()) return;
 
+    // Keep the reported trip state synchronized with the physical outputs even
+    // when this report is requested directly by a command handler.
+    thermal_control_enforce_plate_limit();
     const float plate_temperature_k = thermal_control_get_plate_temperature();
     char message[96];
     snprintf(
