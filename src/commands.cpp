@@ -212,6 +212,40 @@ void handle_thermal_off(const char*)
     send_reply("ACK", "THERMAL_OFF");
 }
 
+void handle_plate_limit_on(const char*)
+{
+    thermal_control_set_plate_limit_enabled(true);
+    send_reply("ACK", "PLATE_LIMIT_ON");
+    telemetry_send_plate_limit();
+}
+
+void handle_plate_limit_off(const char*)
+{
+    thermal_control_set_plate_limit_enabled(false);
+    send_reply("ACK", "PLATE_LIMIT_OFF");
+    telemetry_send_plate_limit();
+}
+
+void handle_set_plate_limit(const char* args)
+{
+    float limit_k;
+    if (!parse_float(args, limit_k))
+    {
+        send_reply("NACK", "SET_PLATE_LIMIT", "INVALID_VALUE");
+        return;
+    }
+    if (!thermal_control_set_plate_limit(limit_k))
+    {
+        send_reply("NACK", "SET_PLATE_LIMIT", "OUT_OF_RANGE");
+        return;
+    }
+
+    char detail[16];
+    snprintf(detail, sizeof(detail), "%.2f", limit_k);
+    send_reply("ACK", "SET_PLATE_LIMIT", detail);
+    telemetry_send_plate_limit();
+}
+
 void handle_set_pid(const char* args)
 {
     float kp;
@@ -364,6 +398,9 @@ const CommandEntry command_table[] =
     {"SET_TARGET", handle_set_target},
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
+    {"PLATE_LIMIT_ON", handle_plate_limit_on},
+    {"PLATE_LIMIT_OFF", handle_plate_limit_off},
+    {"SET_PLATE_LIMIT", handle_set_plate_limit},
     {"SET_THERMAL_MODE", handle_set_thermal_mode},
     {"SET_THERMAL_FUSION", handle_set_thermal_fusion},
     {"SET_HYSTERESIS", handle_set_hysteresis},
