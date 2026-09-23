@@ -40,12 +40,40 @@ int main() {
     assert(thermal_control_get_mode() == ThermalMode::PID);
     assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MEAN);
     assert(std::strcmp(thermal_control_get_fusion_mode_name(), "MEAN") == 0);
+    assert(!thermal_control_plate_limit_is_enabled());
+    assert(std::abs(
+        thermal_control_get_plate_limit() - HEATING_PLATE_LIMIT_DEFAULT_K
+    ) < 0.001f);
+    assert(!thermal_control_set_plate_limit(HEATING_PLATE_LIMIT_MIN_K - 0.1f));
+    assert(!thermal_control_set_plate_limit(HEATING_PLATE_LIMIT_MAX_K + 0.1f));
+    assert(!thermal_control_set_plate_limit(NAN));
     assert(!thermal_control_set_fusion_mode(static_cast<ThermalFusionMode>(99)));
     assert(thermal_control_set_fusion_mode(ThermalFusionMode::MAXIMUM));
     assert(std::strcmp(thermal_control_get_fusion_mode_name(), "MAXIMUM") == 0);
     thermal_control_init();
     assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MAXIMUM);
     assert(thermal_control_set_fusion_mode(ThermalFusionMode::MEAN));
+
+    // The plate limiter is independent of the control target and persists.
+    assert(thermal_control_set_plate_limit(300.0f));
+    thermal_control_set_plate_limit_enabled(true);
+    assert(thermal_control_plate_limit_is_enabled());
+    assert(thermal_control_set_bang_bang_power(30));
+    assert(thermal_control_set_hysteresis(0.5f));
+    assert(thermal_control_set_target(305.0f));
+    assert(thermal_control_set_mode(ThermalMode::BANG_BANG));
+    sample(301.0f, 0);
+    assert(thermal_control_plate_limit_tripped());
+    sample(299.5f, 0);
+    sample(298.5f, 30);
+    assert(!thermal_control_plate_limit_tripped());
+    thermal_control_init();
+    assert(thermal_control_plate_limit_is_enabled());
+    assert(std::abs(thermal_control_get_plate_limit() - 300.0f) < 0.001f);
+    thermal_control_set_plate_limit_enabled(false);
+
+    assert(thermal_control_set_target(298.15f));
+    assert(thermal_control_set_mode(ThermalMode::PID));
     assert(thermal_control_set_pid(2, 0, 0));
     sample(297.15f, 2);
     assert(thermal_control_set_bang_bang_power(30));
@@ -113,6 +141,10 @@ int main() {
     assert(thermal_control_get_bang_bang_power() == 35.0f);
     assert(thermal_control_get_fusion_mode() == THERMAL_DEFAULT_FUSION_MODE);
     assert(thermal_control_get_target() == 301);
+    assert(!thermal_control_plate_limit_is_enabled());
+    assert(std::abs(
+        thermal_control_get_plate_limit() - HEATING_PLATE_LIMIT_DEFAULT_K
+    ) < 0.001f);
 
     puts("Thermal controller regression checks passed");
 }
