@@ -2,13 +2,16 @@
 
 #include "ethernet_link.h"
 
+#include "config.h"
+
+#if ENABLE_ETHERNET
+
 #include <NativeEthernet.h>
 #include <NativeEthernetUdp.h>
 
 #include <cmath>
 #include <cstring>
 
-#include "config.h"
 #include "binary_telemetry.h"
 
 
@@ -900,3 +903,5 @@ uint16_t ethernet_link_get_airdos_queue_size()
 {
     return static_cast<uint16_t>(airdos_queue.size());
 }
+
+#endif // ENABLE_ETHERNET

@@ -129,10 +129,9 @@ constexpr float HEATER_MAX_POWER_PERCENT[HEATER_CHANNEL_COUNT] =
 constexpr uint32_t HEATER_PWM_FREQUENCY_HZ = 100;
 
 // Thermal control
-// Sensors participating in the control temperature. TEMP_1 remains the
-// default so the controller behaves exactly as before until the final sensor
-// assignment is known. To use six sensors, list those six TempSensor entries
-// here and lower THERMAL_MIN_VALID_SENSORS only if degraded operation is wanted.
+// Sensors participating in the control temperature. All six selected sensors
+// must be valid by default. Lower THERMAL_MIN_VALID_SENSORS only if degraded
+// operation is wanted.
 constexpr TempSensor THERMAL_CONTROL_SENSORS[] =
 {
     TempSensor::TEMP_1,

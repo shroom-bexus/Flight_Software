@@ -294,6 +294,16 @@ void apply_plate_limit_to_outputs()
     }
 }
 
+void write_limited_power(Heater heater, float power)
+{
+    // Check the gate before writing PWM: never briefly energize an inhibited
+    // channel and then switch it off again during the same update.
+    if (controller.plate_limit_tripped && plate_heater_selected(heater))
+        heater_off(heater);
+    else
+        heater_set_power(heater, power);
+}
+
 void load_settings()
 {
     EEPROM.get(0, settings);
@@ -374,14 +384,22 @@ void reset_controller()
 
 void apply_output(float output_percent)
 {
+    update_plate_limit_state();
+    if (controller.plate_limit_tripped && HEATING_PLATE_HEATER == 0)
+    {
+        // The actuator is unavailable. Discard PID history so integral demand
+        // cannot accumulate while all outputs are inhibited.
+        reset_controller();
+        return;
+    }
     // One command drives all four heaters on the shared thermal mass.
     controller.output_percent = constrain(
         output_percent,
         0.0f,
         THERMAL_MAX_OUTPUT_PERCENT
     );
-    heater_set_all_power(controller.output_percent);
-    apply_plate_limit_to_outputs();
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+        write_limited_power(static_cast<Heater>(i), controller.output_percent);
 }
 } // namespace
 
@@ -419,11 +437,11 @@ void thermal_control_update()
     // Manual outputs are restored only after the sensor and safety checks.
     if (!controller.enabled)
     {
+        update_plate_limit_state();
         for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
         {
-            heater_set_power(static_cast<Heater>(i), settings.heater_power[i]);
+            write_limited_power(static_cast<Heater>(i), settings.heater_power[i]);
         }
-        apply_plate_limit_to_outputs();
         return;
     }
 
@@ -581,6 +599,26 @@ void thermal_control_save_heater_power(uint8_t heater_index)
     save_settings();
 }
 
+bool thermal_control_set_manual_power(uint8_t heater_number, float power_percent)
+{
+    if (controller.enabled || heater_number > HEATER_CHANNEL_COUNT ||
+        !std::isfinite(power_percent) || power_percent < 0.0f || power_percent > 100.0f)
+        return false;
+
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+    {
+        if (heater_number != 0 && heater_number != i + 1) continue;
+        settings.heater_power[i] = HEATER_ENABLED[i]
+            ? constrain(power_percent, 0.0f, HEATER_MAX_POWER_PERCENT[i])
+            : 0.0f;
+    }
+    // Apply sensor safety and the plate gate before any PWM or EEPROM write.
+    // Persist the requested setpoint, including while a limiter holds it off.
+    thermal_control_update();
+    save_settings();
+    return true;
+}
+
 void thermal_control_set_plate_limit_enabled(bool enabled)
 {
     if (settings.plate_limit_enabled == enabled)
@@ -628,6 +666,8 @@ bool thermal_control_plate_limit_tripped()
 void thermal_control_enforce_plate_limit()
 {
     apply_plate_limit_to_outputs();
+    if (controller.enabled && controller.plate_limit_tripped && HEATING_PLATE_HEATER == 0)
+        reset_controller();
 }
 
 

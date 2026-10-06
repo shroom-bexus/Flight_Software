@@ -129,6 +129,9 @@ void thermal_control_save_heater_state();
  */
 void thermal_control_save_heater_power(uint8_t heater_index);
 
+/** @brief Persist and safely apply a manual setpoint; 0 = all, 1..4 = channel. */
+bool thermal_control_set_manual_power(uint8_t heater_number, float power_percent);
+
 /** @brief Enable or disable the heating-plate temperature limiter. */
 void thermal_control_set_plate_limit_enabled(bool enabled);
 

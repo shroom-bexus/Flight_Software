@@ -25,7 +25,6 @@ Main controllers:
 ## Building
 
 Use PlatformIO from this directory:
-grep -n -E '^(<<<<<<<|=======|>>>>>>>)' README.md
 ```sh
 pio run -e primary
 pio run -e secondary
@@ -64,8 +63,8 @@ automatically. Keep per-sensor CSV formatting in the corresponding log function.
 For USB access to a new filename, also update `known_log_files` in
 `storage_download.cpp` and the PC downloader as needed.
 
-EEPROM currently preserves thermal enable, target, manual heater outputs, and
-PID gains. The downlink limit starts from `config.h` after reset and is refreshed
+EEPROM preserves thermal enable, target, manual heater setpoints, PID gains,
+regulator selection, bang-bang settings, fusion mode and plate-limiter settings. The downlink limit starts from `config.h` after reset and is refreshed
 by the ground station. Changing persistence or protocol formats requires a
 separate compatibility change.
 
@@ -80,8 +79,8 @@ does not prevent the other copy or UART forwarding.
 The secondary then forwards the complete line and sensor ID over `Serial1`
 at **2,000,000 baud, 8N1**. The primary stores a received copy on both of its
 SD devices and sends the existing `AIRDOS,time_ms,sensor,data` format to the
-GS. The current Groundstation parser and logger already support IDs 1-9;
-no GS update is required. All nine sensors share the existing downlink
+GS. The matching Groundstation supports IDs 1-9 and decodes the SHB1 binary
+downlink. Update the GS before flashing this firmware. All nine sensors share the existing downlink
 priority table, queues, and bandwidth limiter. Downlink suppression never
 suppresses secondary logging or the inter-Teensy link.
 
@@ -123,7 +122,7 @@ MOSI=11, MISO=12, SCK=13, CS=10.
   increments a counter and reports that counter over USB when available.
   Local logging has already been attempted independently.
 - Link frames are `\n!A,<ID>,<raw line>\n`. Commas in the payload are preserved.
-  AIRDOS lines must start with `$` and fit the existing 255-character limit.
+  AIRDOS lines must start with `$` and fit the 1023-character limit.
   Overlong or malformed frames are discarded until newline; the next intact
   frame can be received after either Teensy resets. No ACK, retransmission
   or checksum is implemented. Electrically corrupted but syntactically valid
@@ -152,7 +151,9 @@ host tests with `bash test/host/run.sh` (requires g++). They exercise the actual
 AIRDOS parser and link module with fake serial ports: all seven input ports,
 fragmentation, maximum line length, malformed/overlong input, resynchronizing
 after a reset, overflow counters, and atomic rejection when TX space is full.
-They do not simulate SD timing, UART electrical behavior or radio throughput.
+The same runner also checks the thermal controller, EEPROM migration, plate
+limiter, queue wraparound and binary scheduler. It does not simulate SD timing,
+UART electrical behavior or radio throughput.
 
 Before flight, test all nine sources together, compare the two secondary
 `airdos.csv` copies, check ID 1-7 reception on the primary and GS, repeat with
@@ -180,7 +181,7 @@ it does not select PID. `thermal on/off` enables/disables the selected regulator
 Bang-bang turns ON at or below target minus hysteresis, OFF at or above target
 plus hysteresis, and retains its state inside that band. Hysteresis is a
 half-width (>0..10 K); ON power accepts 0..100%. Both regulators use the same
-sensor, target, output limits and overtemperature cutoff. The cutoff always
+fused temperature, target, output limits and overtemperature cutoff. The cutoff always
 wins, even if the upper hysteresis threshold is above it. There is no automatic
 fallback. Missing/invalid/non-finite sensor readings switch heating off.
 
@@ -194,16 +195,32 @@ Regulator selection, hysteresis and ON power survive resets. EEPROM version-2
 PID gains, target, enabled state and manual settings are preserved on upgrade.
 PID gains remain available when switching back from bang-bang.
 
-The flight computer sends `THERMAL_CONFIG,time_ms,mode,hysteresis_K,on_power_percent`
-every health interval (5 s). The GS displays the reported configuration and logs
-it in `thermal_config.csv`; the dashboard labels the selected regulator.
-Existing THERMAL/PID messages remain unchanged. Update both repositories for
-command and display support. New settings may take up to a health interval to
-appear, plus any downlink queue delay.
+The flight computer sends
+`THERMAL_CONFIG,time_ms,mode,hysteresis_K,on_power_percent,fusion` at startup
+and every 60 s, and queues an immediate update after regulator, fusion,
+hysteresis or bang-bang-power commands. The GS displays the reported
+configuration and logs it in `thermal_config.csv`; the dashboard labels the
+selected regulator. Updates still depend on uplink pacing and downlink queue
+delay. Existing THERMAL/PID messages remain unchanged.
 
 Validation: host-side regression tests exercise the real controller source with
 simulated EEPROM, sensor and heater interfaces. Hardware timing, PWM and thermal
 response still require a Teensy bench test before use.
+
+## Thermal sensor fusion
+
+The selected control sensors are TEMP_1, TEMP_2, TEMP_5, TEMP_6, TEMP_7 and
+TEMP_9 in Flight Software's `include/config.h`. All six must be valid by default;
+a missing selected sensor turns heating off, including manual heating. The
+plate sensor TEMP_3 is separate. A per-sensor 40 °C cutoff is checked before
+fusion, so MEAN or MEDIAN cannot hide an overheated control sensor.
+
+Use `fusion mean`, `fusion median`, `fusion min` or `fusion max` in the GS.
+The selected mode persists on the Teensy and a change clears automatic
+controller history. Sensor membership and the minimum valid count remain
+firmware configuration settings. The GS sends compact `SET_FUSION` and
+`SET_MODE` wire commands so even five-digit command IDs fit the 1 kbit/s
+uplink burst budget; the longer legacy names remain accepted.
 
 ## Heating-plate temperature limit
 
@@ -226,16 +243,21 @@ set 0..100 °C with `platelimit on`, `platelimit off`, and
 temperature reaches the limit, the selected heater output is forced to zero and
 remains inhibited until the plate is at least 1 K below the limit. If the limit
 is enabled and the configured plate sensor is invalid or unavailable, heating is
-inhibited fail-safe.
+inhibited fail-safe. The gate is checked before writing PWM, including manual
+commands, so an inhibited channel is not briefly switched on during updates.
+When every channel is inhibited, PID history is cleared to prevent integral
+windup; automatic control resumes from a fresh sample. Manual requested
+setpoints are retained and restored when the gate and sensor safety allow it.
 
 The flight computer reports
 `PLATE_LIMIT,time_ms,enabled,limit_K,temperature_K,tripped,sensor,heater`.
-Heater 0 means all heater channels. This state is shown by the terminal GS and
-logged to `plate_limit.csv`.
+Heater 0 means all heater channels. Reports follow the 1 s thermal-sampling
+cadence, with immediate reports after plate-limit commands. The terminal GS
+marks them stale after 10 s or on disconnect and logs them to `plate_limit.csv`.
 
 ## Independent storage health
 
-Every five seconds the Primary sends separate messages for its own storage
+At startup and every 60 seconds the Primary sends separate messages for its own storage
 and the Secondary's storage, using Primary reception time for the health batch:
 
 ```text
@@ -264,8 +286,8 @@ telemetry, raw commands and CSV temperatures continue to use Kelvin.
 
 ### Secondary link and temperature freshness
 
-The primary reports `HEALTH,time_ms,SECONDARY,state,error_count` every five
-seconds. `WAITING` allows 15 seconds after link initialization. Any valid UART
+The primary reports `HEALTH,time_ms,SECONDARY,state,error_count` at startup
+and every 60 seconds. `WAITING` allows 15 seconds after link initialization. Any valid UART
 AIRDOS, storage, or overflow-status frame proves the secondary is active;
 15 seconds without one gives `FAULT`. The existing periodic secondary status
 frames keep this independent of AIRDOS measurement traffic. Recovery is
@@ -285,13 +307,14 @@ historical plots are retained. No thermal-control behavior is changed.
 
 ### Primary RTC telemetry
 
-The primary sends `RTC,time_ms,valid,timestamp_utc` every 5 seconds with health
+The primary sends `RTC,time_ms,valid,timestamp_utc` at startup and every 60
+seconds with health
 telemetry, through the existing bandwidth-limited system queue. For example:
 `RTC,12345,1,2026-09-21T12:34:56Z`. An unsynchronized clock sends
 `RTC,12345,0,`. UTC uses the same TimeLib/hardware RTC source as SD timestamps;
 validity confirms synchronization, not accuracy against an external clock.
 The terminal and browser dashboard show the last received sample in UTC and
-its reception age (not transport latency), with STALE after 15 seconds or
+its reception age (not transport latency), with STALE after 75 seconds or
 while disconnected. No PC-clock substitution or RTC-setting command is used.
 Update both firmware and GS; older firmware leaves the display waiting.
 

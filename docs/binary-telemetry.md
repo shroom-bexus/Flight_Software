@@ -4,7 +4,7 @@ SHB1 replaces regular CSV telemetry on UDP, including AIRDOS and housekeeping.
 Commands and immediate ACK/NACK/WARN/session replies remain text. SD logging and
 secondary-to-primary UART forwarding are unchanged. Update Groundstation first:
 it accepts both legacy text telemetry and SHB1. An old GS cannot decode SHB1.
-Deploy matching `feature/binary-telemetry` branches in both repositories.
+Use matching `main` versions in both repositories after the integration merge.
 
 The codec is lossless for the existing CSV text: no floating-point rounding,
 assumed AIRDOS sensor bit widths, or discarded unknown fields. Canonical unsigned
@@ -82,10 +82,21 @@ Replay duplicates each source event across nine sensor IDs at the same recorded
 time, runs production queue/pacing code with mocked UDP and a 1 ms service tick,
 and adds one PADS message/second at a configured 120 kbit/s. The replay checker
 now also verifies at least 50 ms between regular packets and a rolling 200 ms
-wire-rate ceiling. Because the pacing algorithm changed after the original
-baseline run, the previous packet-count/delay figures are no longer treated as
-current validation results. Re-run the script below before flight and record the
-new figures together with the hardware replay.
+wire-rate ceiling.
+
+Updated replay on 6 October 2026, using the original recording and the current
+production scheduler:
+
+- 23,769 source records roundtrip exactly, plus four boundary cases.
+- All 213,921 nine-sensor AIRDOS records are delivered unchanged.
+- 39,472 regular packets; 9,023,078 estimated wire bytes.
+- Peak queue occupancy: 2,493 records; zero drops, zero suppression, zero remaining.
+- Maximum simulated delivery delay: 3,666 ms.
+- 50 ms minimum regular-packet spacing and the rolling 200 ms rate ceiling pass.
+
+The replay adds one PADS message per second; it is not a complete simulation of
+all flight housekeeping, UART/SD timing or radio behavior. Hardware replay
+remains required before flight.
 
 Reproduce with Groundstation's `tools/verify_binary_replay.py`:
 
@@ -95,6 +106,16 @@ python tools/verify_binary_replay.py ../Flight_Software /path/to/radiation.jsonl
 
 Additional host checks cover ring wraparound, 32-bit clock rollover, send failure,
 numeric boundaries, raw fallback and malformed packets. Run `test/host/run.sh`
-for the existing primary/secondary link tests. A real Teensy build and hardware
-replay remain required before flight; the local firmware build dependency download
-was blocked by the environment's network approval mechanism.
+for primary/secondary link, thermal/EEPROM and queue regression tests.
+
+Both Teensy 4.1 firmware targets built successfully on 6 October 2026 with
+PlatformIO 6.2.0, Teensy platform 6.0.0, Arduino Teensy 1.62 and GCC 15.2.1.
+The inactive Ethernet implementation is excluded from the Secondary build.
+
+| Target | RAM1 variables | RAM1 code + padding | RAM1 available for locals | RAM2 available for heap |
+| --- | ---: | ---: | ---: | ---: |
+| Primary | 268,548 B | 196,608 B | 59,132 B | 511,840 B |
+| Secondary | 86,400 B | 98,304 B | 339,584 B | 511,872 B |
+
+These are static linker margins, not a measured runtime stack high-water mark.
+Hardware replay, PWM and thermal-response validation remain required before flight.

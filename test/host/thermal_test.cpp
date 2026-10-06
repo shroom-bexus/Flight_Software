@@ -6,6 +6,7 @@
 FakeEEPROM EEPROM;
 float temperature = 298.15f, plate_temperature = 298.15f, powers[4] = {};
 bool valid = true, plate_valid = true, sensor_enabled = true;
+bool forbid_nonzero_writes = false;
 
 bool max31865_is_enabled(TempSensor) { return sensor_enabled; }
 bool max31865_data_valid(TempSensor sensor) {
@@ -14,9 +15,16 @@ bool max31865_data_valid(TempSensor sensor) {
 float max31865_get_temperature(TempSensor sensor) {
     return sensor == HEATING_PLATE_TEMP_SENSOR ? plate_temperature : temperature;
 }
-void heater_set_power(Heater h, float p) { powers[static_cast<unsigned>(h)] = p; }
+void heater_set_power(Heater h, float p) {
+    assert(!forbid_nonzero_writes || p == 0);
+    powers[static_cast<unsigned>(h)] = p;
+}
+void heater_off(Heater h) { heater_set_power(h, 0); }
 float heater_get_power(Heater h) { return powers[static_cast<unsigned>(h)]; }
-void heater_set_all_power(float p) { for (float& v : powers) v = p; }
+void heater_set_all_power(float p) {
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+        heater_set_power(static_cast<Heater>(i), p);
+}
 void heater_all_off() { heater_set_all_power(0); }
 void sample(float t, float expected) {
     temperature = t;
@@ -61,6 +69,27 @@ int main() {
     assert(thermal_control_get_fusion_mode() == ThermalFusionMode::MAXIMUM);
     assert(thermal_control_set_fusion_mode(ThermalFusionMode::MEAN));
 
+    // The PID must not accumulate heat demand while the plate limiter has
+    // inhibited every output. Releasing the limiter starts from fresh history.
+    assert(thermal_control_set_target(305.0f));
+    assert(thermal_control_set_pid(2, 1, 0));
+    assert(thermal_control_set_plate_limit(300.0f));
+    thermal_control_set_plate_limit_enabled(true);
+    temperature = 295.0f;
+    plate_temperature = 301.0f;
+    forbid_nonzero_writes = true;
+    for (unsigned i = 0; i < 5; ++i) {
+        fake_time += 1000;
+        thermal_control_update();
+        for (float p : powers) assert(p == 0);
+    }
+    forbid_nonzero_writes = false;
+    plate_temperature = 298.0f;
+    fake_time += 1000;
+    thermal_control_update();
+    for (float p : powers) assert(std::abs(p - 20.0f) < 0.001f);
+    thermal_control_set_plate_limit_enabled(false);
+
     // The plate limiter is independent of the control target and persists.
     assert(thermal_control_set_plate_limit(300.0f));
     thermal_control_set_plate_limit_enabled(true);
@@ -88,20 +117,21 @@ int main() {
     // that logical setpoint. Other limiter-forced physical zeroes must not be
     // written back into EEPROM.
     thermal_control_set_enabled(false);
-    heater_set_power(Heater::HEATER_1, 10);
-    heater_set_power(Heater::HEATER_2, 20);
-    heater_set_power(Heater::HEATER_3, 30);
-    heater_set_power(Heater::HEATER_4, 40);
-    thermal_control_save_heater_state();
+    assert(thermal_control_set_manual_power(1, 10));
+    assert(thermal_control_set_manual_power(2, 20));
+    assert(thermal_control_set_manual_power(3, 30));
+    assert(thermal_control_set_manual_power(4, 40));
 
     plate_temperature = 301.0f;
     thermal_control_enforce_plate_limit();
     for (float p : powers) assert(p == 0);
 
-    heater_set_power(Heater::HEATER_1, 55);
-    thermal_control_save_heater_power(0);
-    thermal_control_enforce_plate_limit();
+    forbid_nonzero_writes = true;
+    assert(thermal_control_set_manual_power(1, 55));
+    fake_time += 1000;
+    thermal_control_update();
     for (float p : powers) assert(p == 0);
+    forbid_nonzero_writes = false;
 
     temperature = 298.5f;
     plate_temperature = 298.5f;
@@ -111,6 +141,22 @@ int main() {
     assert(powers[1] == 20);
     assert(powers[2] == 30);
     assert(powers[3] == 40);
+
+    // ALL is also gated before PWM and survives reset without persisting the
+    // limiter-forced physical zeroes instead of the requested setpoints.
+    plate_temperature = 301.0f;
+    thermal_control_enforce_plate_limit();
+    forbid_nonzero_writes = true;
+    assert(thermal_control_set_manual_power(0, 25));
+    thermal_control_init();
+    thermal_control_update();
+    for (float p : powers) assert(p == 0);
+    forbid_nonzero_writes = false;
+    plate_temperature = 298.5f;
+    thermal_control_update();
+    for (float p : powers) assert(p == 25);
+    assert(!thermal_control_set_manual_power(5, 25));
+    assert(!thermal_control_set_manual_power(1, NAN));
 
     thermal_control_set_enabled(true);
     thermal_control_init();

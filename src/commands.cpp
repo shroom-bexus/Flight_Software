@@ -363,10 +363,7 @@ void handle_set_heater(const char* args)
     char detail[32];
     if (all_heaters)
     {
-        heater_set_all_power(power_percent);
-        // Persist the manual output so it survives a reset.
-        thermal_control_save_heater_state();
-        thermal_control_enforce_plate_limit();
+        thermal_control_set_manual_power(0, power_percent);
         snprintf(detail, sizeof(detail), "ALL,%.1f", power_percent);
     }
     else
@@ -378,11 +375,7 @@ void handle_set_heater(const char* args)
             return;
         }
 
-        heater_set_power(heater, power_percent);
-        thermal_control_save_heater_power(
-            static_cast<uint8_t>(heater_number - 1)
-        );
-        thermal_control_enforce_plate_limit();
+        thermal_control_set_manual_power(static_cast<uint8_t>(heater_number), power_percent);
         snprintf(
             detail,
             sizeof(detail),
@@ -406,7 +399,9 @@ const CommandEntry command_table[] =
     {"PLATE_LIMIT_OFF", handle_plate_limit_off},
     {"SET_PLATE_LIMIT", handle_set_plate_limit},
     {"SET_THERMAL_MODE", handle_set_thermal_mode},
+    {"SET_MODE", handle_set_thermal_mode},
     {"SET_THERMAL_FUSION", handle_set_thermal_fusion},
+    {"SET_FUSION", handle_set_thermal_fusion},
     {"SET_HYSTERESIS", handle_set_hysteresis},
     {"SET_BB_POWER", handle_set_bang_bang_power},
     {"SET_PID", handle_set_pid},
