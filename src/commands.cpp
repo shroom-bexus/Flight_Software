@@ -13,6 +13,7 @@
 #include "ethernet_link.h"
 #include "heater.h"
 #include "thermal_control.h"
+#include "telemetry.h"
 
 namespace
 {
@@ -103,7 +104,8 @@ void handle_scalar_setting(
     const char* args,
     const char* command,
     bool (*setter)(float),
-    const char* format
+    const char* format,
+    bool report_thermal_config = false
 )
 {
     float value;
@@ -121,6 +123,11 @@ void handle_scalar_setting(
     char detail[16];
     snprintf(detail, sizeof(detail), format, value);
     send_reply("ACK", command, detail);
+
+    if (report_thermal_config)
+    {
+        telemetry_send_thermal_config();
+    }
 }
 
 void handle_set_thermal_mode(const char* args)
@@ -131,16 +138,61 @@ void handle_set_thermal_mode(const char* args)
     else { send_reply("NACK", "SET_THERMAL_MODE", "INVALID_VALUE"); return; }
     thermal_control_set_mode(mode);
     send_reply("ACK", "SET_THERMAL_MODE", thermal_control_get_mode_name());
+    telemetry_send_thermal_config();
+}
+
+void handle_set_thermal_fusion(const char* args)
+{
+    ThermalFusionMode mode;
+
+    if (std::strcmp(args, "MEAN") == 0)
+        mode = ThermalFusionMode::MEAN;
+    else if (std::strcmp(args, "MEDIAN") == 0)
+        mode = ThermalFusionMode::MEDIAN;
+    else if (std::strcmp(args, "MINIMUM") == 0)
+        mode = ThermalFusionMode::MINIMUM;
+    else if (std::strcmp(args, "MAXIMUM") == 0)
+        mode = ThermalFusionMode::MAXIMUM;
+    else
+    {
+        send_reply("NACK", "SET_THERMAL_FUSION", "INVALID_VALUE");
+        return;
+    }
+
+    if (!thermal_control_set_fusion_mode(mode))
+    {
+        send_reply("NACK", "SET_THERMAL_FUSION", "INVALID_VALUE");
+        return;
+    }
+
+    send_reply(
+        "ACK",
+        "SET_THERMAL_FUSION",
+        thermal_control_get_fusion_mode_name()
+    );
+    telemetry_send_thermal_config();
 }
 
 void handle_set_hysteresis(const char* args)
 {
-    handle_scalar_setting(args, "SET_HYSTERESIS", thermal_control_set_hysteresis, "%.6g");
+    handle_scalar_setting(
+        args,
+        "SET_HYSTERESIS",
+        thermal_control_set_hysteresis,
+        "%.6g",
+        true
+    );
 }
 
 void handle_set_bang_bang_power(const char* args)
 {
-    handle_scalar_setting(args, "SET_BB_POWER", thermal_control_set_bang_bang_power, "%.6g");
+    handle_scalar_setting(
+        args,
+        "SET_BB_POWER",
+        thermal_control_set_bang_bang_power,
+        "%.6g",
+        true
+    );
 }
 
 void handle_set_target(const char* args)
@@ -158,6 +210,40 @@ void handle_thermal_off(const char*)
 {
     thermal_control_set_enabled(false);
     send_reply("ACK", "THERMAL_OFF");
+}
+
+void handle_plate_limit_on(const char*)
+{
+    thermal_control_set_plate_limit_enabled(true);
+    send_reply("ACK", "PLATE_LIMIT_ON");
+    telemetry_send_plate_limit();
+}
+
+void handle_plate_limit_off(const char*)
+{
+    thermal_control_set_plate_limit_enabled(false);
+    send_reply("ACK", "PLATE_LIMIT_OFF");
+    telemetry_send_plate_limit();
+}
+
+void handle_set_plate_limit(const char* args)
+{
+    float limit_k;
+    if (!parse_float(args, limit_k))
+    {
+        send_reply("NACK", "SET_PLATE_LIMIT", "INVALID_VALUE");
+        return;
+    }
+    if (!thermal_control_set_plate_limit(limit_k))
+    {
+        send_reply("NACK", "SET_PLATE_LIMIT", "OUT_OF_RANGE");
+        return;
+    }
+
+    char detail[16];
+    snprintf(detail, sizeof(detail), "%.2f", limit_k);
+    send_reply("ACK", "SET_PLATE_LIMIT", detail);
+    telemetry_send_plate_limit();
 }
 
 void handle_set_pid(const char* args)
@@ -277,9 +363,7 @@ void handle_set_heater(const char* args)
     char detail[32];
     if (all_heaters)
     {
-        heater_set_all_power(power_percent);
-        // Persist the manual output so it survives a reset.
-        thermal_control_save_heater_state();
+        thermal_control_set_manual_power(0, power_percent);
         snprintf(detail, sizeof(detail), "ALL,%.1f", power_percent);
     }
     else
@@ -291,8 +375,7 @@ void handle_set_heater(const char* args)
             return;
         }
 
-        heater_set_power(heater, power_percent);
-        thermal_control_save_heater_state();
+        thermal_control_set_manual_power(static_cast<uint8_t>(heater_number), power_percent);
         snprintf(
             detail,
             sizeof(detail),
@@ -312,7 +395,13 @@ const CommandEntry command_table[] =
     {"SET_TARGET", handle_set_target},
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
+    {"PLATE_LIMIT_ON", handle_plate_limit_on},
+    {"PLATE_LIMIT_OFF", handle_plate_limit_off},
+    {"SET_PLATE_LIMIT", handle_set_plate_limit},
     {"SET_THERMAL_MODE", handle_set_thermal_mode},
+    {"SET_MODE", handle_set_thermal_mode},
+    {"SET_THERMAL_FUSION", handle_set_thermal_fusion},
+    {"SET_FUSION", handle_set_thermal_fusion},
     {"SET_HYSTERESIS", handle_set_hysteresis},
     {"SET_BB_POWER", handle_set_bang_bang_power},
     {"SET_PID", handle_set_pid},

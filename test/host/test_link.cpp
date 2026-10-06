@@ -68,12 +68,12 @@ int main() {
     }
     auto before = logged.size();
     Serial1.inject("\n!A,0,$E,bad\n!A,8,$E,bad\n!A,1,garbage\n");
-    Serial1.inject("!A,1,$" + std::string(300, 'x') + "\n");
+    Serial1.inject("!A,1,$" + std::string(AIRDOS_LINE_BUFFER_SIZE, 'x') + "\n");
     Serial1.inject(std::string("!A,1,$E,") + char(0) + "tail\n");
     teensy_link_update();
     assert(logged.size() == before && teensy_link_get_error_count() == 5);
     // Largest accepted source line and recovery after malformed input.
-    const std::string maximum = "$" + std::string(254, 'x');
+    const std::string maximum = "$" + std::string(AIRDOS_LINE_BUFFER_SIZE - 2, 'x');
     Serial1.inject("\n!A,2," + maximum + "\n");
     teensy_link_update();
     assert(logged.back().second == maximum && logged == downlinked);
@@ -129,7 +129,7 @@ int main() {
     assert(!teensy_link_send_airdos(1, nullptr));
     assert(teensy_link_send_airdos(7, "$E,recovered"));
     // Source overflow discards the whole line, then recovers at newline.
-    Serial2.inject("$" + std::string(300, 'x') + "\n$E,next\n");
+    Serial2.inject("$" + std::string(AIRDOS_LINE_BUFFER_SIZE, 'x') + "\n$E,next\n");
     assert(!airdos_update(0));
     assert(airdos_get_overflow_count(0) == 1);
     assert(airdos_update(0));

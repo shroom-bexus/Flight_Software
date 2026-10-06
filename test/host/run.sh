@@ -12,3 +12,13 @@ for primary in 0 1; do
         test/host/test_link.cpp -o "$test_dir/test-$primary"
     "$test_dir/test-$primary"
 done
+
+g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -DFLIGHT_PRIMARY=1 -Itest/host -Iinclude \
+    test/host/thermal_test.cpp -o "$test_dir/thermal"
+"$test_dir/thermal"
+
+g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -DFLIGHT_PRIMARY=1 -Itest/binary -Iinclude \
+    test/binary/queue.cpp -o "$test_dir/queue"
+"$test_dir/queue"

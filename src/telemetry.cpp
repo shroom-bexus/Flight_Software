@@ -26,6 +26,7 @@
 namespace
 {
 uint32_t last_health_time = 0;
+bool system_telemetry_sent = false;
 
 const char* health_state(bool initialized, bool valid, uint32_t errors)
 {
@@ -79,6 +80,52 @@ void telemetry_send_max31865(uint8_t sensor_id, float temperature_k)
 #endif
 }
 
+void telemetry_send_thermal_config()
+{
+#if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
+    if (!ethernet_link_connected()) return;
+
+    char message[96];
+    snprintf(
+        message,
+        sizeof(message),
+        "THERMAL_CONFIG,%lu,%s,%.6g,%.6g,%s",
+        static_cast<unsigned long>(millis()),
+        thermal_control_get_mode_name(),
+        thermal_control_get_hysteresis(),
+        thermal_control_get_bang_bang_power(),
+        thermal_control_get_fusion_mode_name()
+    );
+    ethernet_link_send_line(message);
+#endif
+}
+
+void telemetry_send_plate_limit()
+{
+#if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
+    if (!ethernet_link_connected()) return;
+
+    // Keep the reported trip state synchronized with the physical outputs even
+    // when this report is requested directly by a command handler.
+    thermal_control_enforce_plate_limit();
+    const float plate_temperature_k = thermal_control_get_plate_temperature();
+    char message[96];
+    snprintf(
+        message,
+        sizeof(message),
+        "PLATE_LIMIT,%lu,%u,%.2f,%.3f,%u,%u,%u",
+        static_cast<unsigned long>(millis()),
+        thermal_control_plate_limit_is_enabled() ? 1 : 0,
+        thermal_control_get_plate_limit(),
+        plate_temperature_k,
+        thermal_control_plate_limit_tripped() ? 1 : 0,
+        static_cast<unsigned int>(HEATING_PLATE_TEMP_SENSOR) + 1,
+        static_cast<unsigned int>(HEATING_PLATE_HEATER)
+    );
+    ethernet_link_send_line(message);
+#endif
+}
+
 void telemetry_send_thermal()
 {
 #if ENABLE_ETHERNET && ENABLE_THERMAL_CONTROL
@@ -122,6 +169,8 @@ void telemetry_send_thermal()
         heater_get_power(Heater::HEATER_4)
     );
     ethernet_link_send_line(message);
+
+    telemetry_send_plate_limit();
 #endif
 }
 
@@ -169,7 +218,7 @@ void telemetry_send_airdos(uint8_t sensor_id, const char* data)
 
     // AIRDOS raw messages may contain many comma-separated fields. Keep the
     // complete UART line unchanged after the sensor identifier.
-    char message[384];
+    char message[ETHERNET_TELEMETRY_LINE_MAX];
     const int length = snprintf(
         message,
         sizeof(message),
@@ -194,8 +243,13 @@ void telemetry_update()
 
     // Health data is periodic and uses one timestamp for the complete batch.
     const uint32_t time_ms = millis();
-    if (time_ms - last_health_time < HEALTH_TELEMETRY_PERIOD_MS) return;
+    if (system_telemetry_sent &&
+        time_ms - last_health_time < SYSTEM_TELEMETRY_PERIOD_MS)
+    {
+        return;
+    }
     last_health_time = time_ms;
+    system_telemetry_sent = true;
 
     char message[96];
 
@@ -334,10 +388,7 @@ void telemetry_update()
 #endif
 
 #if ENABLE_THERMAL_CONTROL
-    snprintf(message, sizeof(message), "THERMAL_CONFIG,%lu,%s,%.6g,%.6g",
-        static_cast<unsigned long>(time_ms), thermal_control_get_mode_name(),
-        thermal_control_get_hysteresis(), thermal_control_get_bang_bang_power());
-    ethernet_link_send_line(message);
+    telemetry_send_thermal_config();
 #endif
 
     // Confirm the limiter state and AIRDOS selection policy at the ground

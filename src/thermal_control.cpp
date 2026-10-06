@@ -24,11 +24,12 @@ struct ControllerState
     bool bang_bang_on = false;
     bool initialized = false;
     bool enabled = true;
+    bool plate_limit_tripped = false;
 };
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
-constexpr uint32_t SETTINGS_VERSION = 3;
+constexpr uint32_t SETTINGS_VERSION = 5;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -45,6 +46,9 @@ struct PersistentSettings
     ThermalMode mode;
     float hysteresis_k;
     float bang_bang_power;
+    ThermalFusionMode fusion_mode;
+    bool plate_limit_enabled;
+    float plate_limit_k;
 };
 
 ControllerState controller;
@@ -78,6 +82,32 @@ void set_bang_bang_defaults()
     settings.bang_bang_power = THERMAL_DEFAULT_BANG_BANG_POWER_PERCENT;
 }
 
+void set_fusion_default()
+{
+    settings.fusion_mode = THERMAL_DEFAULT_FUSION_MODE;
+}
+
+void set_plate_limit_defaults()
+{
+    settings.plate_limit_enabled = HEATING_PLATE_LIMIT_DEFAULT_ENABLED;
+    settings.plate_limit_k = HEATING_PLATE_LIMIT_DEFAULT_K;
+}
+
+bool plate_limit_value_valid(float value)
+{
+    return std::isfinite(value) &&
+        value >= HEATING_PLATE_LIMIT_MIN_K &&
+        value <= HEATING_PLATE_LIMIT_MAX_K;
+}
+
+bool fusion_mode_valid(ThermalFusionMode mode)
+{
+    return mode == ThermalFusionMode::MEAN ||
+        mode == ThermalFusionMode::MEDIAN ||
+        mode == ThermalFusionMode::MINIMUM ||
+        mode == ThermalFusionMode::MAXIMUM;
+}
+
 bool hysteresis_valid(float value)
 {
     return std::isfinite(value) && value > 0.0f && value <= THERMAL_MAX_HYSTERESIS_K;
@@ -86,6 +116,192 @@ bool hysteresis_valid(float value)
 bool bang_bang_power_valid(float value)
 {
     return std::isfinite(value) && value >= 0.0f && value <= THERMAL_MAX_OUTPUT_PERCENT;
+}
+
+float fuse_temperatures(
+    const float* values,
+    uint8_t count,
+    ThermalFusionMode mode
+)
+{
+    if (values == nullptr || count == 0 || count > MAX31865_CHANNEL_COUNT)
+    {
+        return NAN;
+    }
+
+    if (mode == ThermalFusionMode::MEAN)
+    {
+        float sum = 0.0f;
+        for (uint8_t i = 0; i < count; ++i) sum += values[i];
+        return sum / static_cast<float>(count);
+    }
+
+    if (mode == ThermalFusionMode::MINIMUM)
+    {
+        float result = values[0];
+        for (uint8_t i = 1; i < count; ++i)
+            if (values[i] < result) result = values[i];
+        return result;
+    }
+
+    if (mode == ThermalFusionMode::MAXIMUM)
+    {
+        float result = values[0];
+        for (uint8_t i = 1; i < count; ++i)
+            if (values[i] > result) result = values[i];
+        return result;
+    }
+
+    if (mode != ThermalFusionMode::MEDIAN) return NAN;
+
+    // Median: sort a small local copy so the caller's samples remain unchanged.
+    float sorted[MAX31865_CHANNEL_COUNT];
+    for (uint8_t i = 0; i < count; ++i) sorted[i] = values[i];
+
+    for (uint8_t i = 1; i < count; ++i)
+    {
+        const float value = sorted[i];
+        uint8_t j = i;
+        while (j > 0 && sorted[j - 1] > value)
+        {
+            sorted[j] = sorted[j - 1];
+            --j;
+        }
+        sorted[j] = value;
+    }
+
+    const uint8_t middle = count / 2;
+    if ((count & 1U) != 0) return sorted[middle];
+    return (sorted[middle - 1] + sorted[middle]) * 0.5f;
+}
+
+bool get_control_temperature(float& temperature_k)
+{
+    float temperatures[THERMAL_CONTROL_SENSOR_COUNT];
+    uint8_t valid_count = 0;
+
+    for (uint8_t i = 0; i < THERMAL_CONTROL_SENSOR_COUNT; ++i)
+    {
+        const TempSensor sensor = THERMAL_CONTROL_SENSORS[i];
+
+        if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+        {
+            continue;
+        }
+
+        const float value = max31865_get_temperature(sensor);
+        if (!std::isfinite(value)) continue;
+
+        temperatures[valid_count++] = value;
+    }
+
+    if (valid_count < THERMAL_MIN_VALID_SENSORS)
+    {
+        temperature_k = NAN;
+        return false;
+    }
+
+    temperature_k = fuse_temperatures(
+        temperatures,
+        valid_count,
+        settings.fusion_mode
+    );
+    return std::isfinite(temperature_k);
+}
+
+bool control_sensors_safe()
+{
+    // Safety is evaluated per physical sensor, not on the fused value. This
+    // prevents MEAN or MEDIAN from hiding one locally overheated sensor.
+    for (uint8_t i = 0; i < THERMAL_CONTROL_SENSOR_COUNT; ++i)
+    {
+        const TempSensor sensor = THERMAL_CONTROL_SENSORS[i];
+
+        if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+        {
+            continue;
+        }
+
+        const float value = max31865_get_temperature(sensor);
+        if (std::isfinite(value) && value >= THERMAL_MAX_TEMPERATURE_K)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool plate_heater_selected(Heater heater)
+{
+    if (HEATING_PLATE_HEATER == 0) return true;
+    return static_cast<uint8_t>(heater) + 1 == HEATING_PLATE_HEATER;
+}
+
+bool read_plate_temperature(float& temperature_k)
+{
+    const TempSensor sensor = HEATING_PLATE_TEMP_SENSOR;
+    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+    {
+        temperature_k = NAN;
+        return false;
+    }
+
+    temperature_k = max31865_get_temperature(sensor);
+    return std::isfinite(temperature_k);
+}
+
+void update_plate_limit_state()
+{
+    if (!settings.plate_limit_enabled)
+    {
+        controller.plate_limit_tripped = false;
+        return;
+    }
+
+    float temperature_k = NAN;
+    if (!read_plate_temperature(temperature_k))
+    {
+        // Fail safe: an enabled limiter never permits heating without a valid
+        // temperature from the configured plate sensor.
+        controller.plate_limit_tripped = true;
+        return;
+    }
+
+    if (controller.plate_limit_tripped)
+    {
+        if (temperature_k <=
+            settings.plate_limit_k - HEATING_PLATE_LIMIT_HYSTERESIS_K)
+        {
+            controller.plate_limit_tripped = false;
+        }
+    }
+    else if (temperature_k >= settings.plate_limit_k)
+    {
+        controller.plate_limit_tripped = true;
+    }
+}
+
+void apply_plate_limit_to_outputs()
+{
+    update_plate_limit_state();
+    if (!controller.plate_limit_tripped) return;
+
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+    {
+        const Heater heater = static_cast<Heater>(i);
+        if (plate_heater_selected(heater)) heater_off(heater);
+    }
+}
+
+void write_limited_power(Heater heater, float power)
+{
+    // Check the gate before writing PWM: never briefly energize an inhibited
+    // channel and then switch it off again during the same update.
+    if (controller.plate_limit_tripped && plate_heater_selected(heater))
+        heater_off(heater);
+    else
+        heater_set_power(heater, power);
 }
 
 void load_settings()
@@ -101,30 +317,56 @@ void load_settings()
         settings.version = SETTINGS_VERSION;
         set_pid_defaults();
         set_bang_bang_defaults();
+        set_fusion_default();
+        set_plate_limit_defaults();
         save_settings();
         return;
     }
 
     bool settings_changed = false;
+    const uint32_t stored_version = settings.version;
 
-    // Older settings did not contain PID gains. Preserve their other values.
-    if ((settings.version != 2 && settings.version != SETTINGS_VERSION) ||
+    // Version 2 already contained PID gains. Versions 3 and 4 keep the same
+    // prefix, so append-only migration preserves all operator settings.
+    if ((stored_version != 2 && stored_version != 3 &&
+         stored_version != 4 && stored_version != SETTINGS_VERSION) ||
         !pid_values_valid(settings.kp, settings.ki, settings.kd))
     {
         set_pid_defaults();
         settings_changed = true;
     }
 
-    // Append-only migration preserves version-2 PID gains and operator settings.
-    if (settings.version != SETTINGS_VERSION ||
+    // Version 2 did not yet contain bang-bang settings. Version 3 did.
+    if (stored_version == 2 ||
         (settings.mode != ThermalMode::PID && settings.mode != ThermalMode::BANG_BANG) ||
         !hysteresis_valid(settings.hysteresis_k) ||
         !bang_bang_power_valid(settings.bang_bang_power))
     {
         set_bang_bang_defaults();
+        settings_changed = true;
+    }
+
+    // Fusion mode was appended in version 4.
+    if (stored_version < 4 || !fusion_mode_valid(settings.fusion_mode))
+    {
+        set_fusion_default();
+        settings_changed = true;
+    }
+
+    // Heating-plate limiter settings were appended in version 5.
+    if (stored_version != SETTINGS_VERSION ||
+        !plate_limit_value_valid(settings.plate_limit_k))
+    {
+        set_plate_limit_defaults();
+        settings_changed = true;
+    }
+
+    if (settings.version != SETTINGS_VERSION)
+    {
         settings.version = SETTINGS_VERSION;
         settings_changed = true;
     }
+
     if (settings_changed) save_settings();
 }
 
@@ -142,13 +384,22 @@ void reset_controller()
 
 void apply_output(float output_percent)
 {
+    update_plate_limit_state();
+    if (controller.plate_limit_tripped && HEATING_PLATE_HEATER == 0)
+    {
+        // The actuator is unavailable. Discard PID history so integral demand
+        // cannot accumulate while all outputs are inhibited.
+        reset_controller();
+        return;
+    }
     // One command drives all four heaters on the shared thermal mass.
     controller.output_percent = constrain(
         output_percent,
         0.0f,
         THERMAL_MAX_OUTPUT_PERCENT
     );
-    heater_set_all_power(controller.output_percent);
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+        write_limited_power(static_cast<Heater>(i), controller.output_percent);
 }
 } // namespace
 
@@ -164,17 +415,20 @@ void thermal_control_init()
 
 void thermal_control_update()
 {
-    const TempSensor sensor = THERMAL_CONTROL_SENSOR;
-    // Never heat without a valid control sensor.
-    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
+    float temperature_k = NAN;
+
+    // Only run when enough configured control sensors produced a fresh value.
+    // Invalid channels are excluded from fusion, but the configured minimum
+    // decides whether degraded operation is still permitted.
+    if (!get_control_temperature(temperature_k))
     {
         controller.enabled ? reset_controller() : heater_all_off();
         return;
     }
 
-    const float temperature_k = max31865_get_temperature(sensor);
-    // This cutoff also overrides stored manual heater outputs.
-    if (!std::isfinite(temperature_k) || temperature_k >= THERMAL_MAX_TEMPERATURE_K)
+    // This cutoff also overrides stored manual heater outputs. It is checked
+    // per sensor so one hot location cannot be hidden by sensor fusion.
+    if (!control_sensors_safe())
     {
         controller.enabled ? reset_controller() : heater_all_off();
         return;
@@ -183,9 +437,10 @@ void thermal_control_update()
     // Manual outputs are restored only after the sensor and safety checks.
     if (!controller.enabled)
     {
+        update_plate_limit_state();
         for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
         {
-            heater_set_power(static_cast<Heater>(i), settings.heater_power[i]);
+            write_limited_power(static_cast<Heater>(i), settings.heater_power[i]);
         }
         return;
     }
@@ -260,9 +515,8 @@ float thermal_control_get_target()
 
 float thermal_control_get_temperature()
 {
-    const TempSensor sensor = THERMAL_CONTROL_SENSOR;
-    if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor)) return NAN;
-    return max31865_get_temperature(sensor);
+    float temperature_k = NAN;
+    return get_control_temperature(temperature_k) ? temperature_k : NAN;
 }
 
 float thermal_control_get_kp()
@@ -335,12 +589,125 @@ void thermal_control_save_heater_state()
     save_settings();
 }
 
+void thermal_control_save_heater_power(uint8_t heater_index)
+{
+    if (heater_index >= HEATER_CHANNEL_COUNT) return;
+
+    settings.heater_power[heater_index] = heater_get_power(
+        static_cast<Heater>(heater_index)
+    );
+    save_settings();
+}
+
+bool thermal_control_set_manual_power(uint8_t heater_number, float power_percent)
+{
+    if (controller.enabled || heater_number > HEATER_CHANNEL_COUNT ||
+        !std::isfinite(power_percent) || power_percent < 0.0f || power_percent > 100.0f)
+        return false;
+
+    for (uint8_t i = 0; i < HEATER_CHANNEL_COUNT; ++i)
+    {
+        if (heater_number != 0 && heater_number != i + 1) continue;
+        settings.heater_power[i] = HEATER_ENABLED[i]
+            ? constrain(power_percent, 0.0f, HEATER_MAX_POWER_PERCENT[i])
+            : 0.0f;
+    }
+    // Apply sensor safety and the plate gate before any PWM or EEPROM write.
+    // Persist the requested setpoint, including while a limiter holds it off.
+    thermal_control_update();
+    save_settings();
+    return true;
+}
+
+void thermal_control_set_plate_limit_enabled(bool enabled)
+{
+    if (settings.plate_limit_enabled == enabled)
+    {
+        thermal_control_enforce_plate_limit();
+        return;
+    }
+
+    settings.plate_limit_enabled = enabled;
+    save_settings();
+    thermal_control_enforce_plate_limit();
+}
+
+bool thermal_control_plate_limit_is_enabled()
+{
+    return settings.plate_limit_enabled;
+}
+
+bool thermal_control_set_plate_limit(float limit_k)
+{
+    if (!plate_limit_value_valid(limit_k)) return false;
+
+    settings.plate_limit_k = limit_k;
+    save_settings();
+    thermal_control_enforce_plate_limit();
+    return true;
+}
+
+float thermal_control_get_plate_limit()
+{
+    return settings.plate_limit_k;
+}
+
+float thermal_control_get_plate_temperature()
+{
+    float temperature_k = NAN;
+    return read_plate_temperature(temperature_k) ? temperature_k : NAN;
+}
+
+bool thermal_control_plate_limit_tripped()
+{
+    return controller.plate_limit_tripped;
+}
+
+void thermal_control_enforce_plate_limit()
+{
+    apply_plate_limit_to_outputs();
+    if (controller.enabled && controller.plate_limit_tripped && HEATING_PLATE_HEATER == 0)
+        reset_controller();
+}
+
 
 ThermalMode thermal_control_get_mode() { return settings.mode; }
 const char* thermal_control_get_mode_name()
 {
     return settings.mode == ThermalMode::BANG_BANG ? "BANG_BANG" : "PID";
 }
+
+ThermalFusionMode thermal_control_get_fusion_mode()
+{
+    return settings.fusion_mode;
+}
+
+const char* thermal_control_get_fusion_mode_name()
+{
+    switch (settings.fusion_mode)
+    {
+        case ThermalFusionMode::MEAN: return "MEAN";
+        case ThermalFusionMode::MEDIAN: return "MEDIAN";
+        case ThermalFusionMode::MINIMUM: return "MINIMUM";
+        case ThermalFusionMode::MAXIMUM: return "MAXIMUM";
+    }
+    return "UNKNOWN";
+}
+
+bool thermal_control_set_fusion_mode(ThermalFusionMode mode)
+{
+    if (!fusion_mode_valid(mode)) return false;
+    if (settings.fusion_mode == mode) return true;
+
+    settings.fusion_mode = mode;
+    save_settings();
+
+    // A changed measurement source invalidates PID derivative/integral history
+    // and bang-bang state, but does not change target or enable state.
+    if (controller.enabled) reset_controller();
+    return true;
+}
+
 float thermal_control_get_hysteresis() { return settings.hysteresis_k; }
 float thermal_control_get_bang_bang_power() { return settings.bang_bang_power; }
 
