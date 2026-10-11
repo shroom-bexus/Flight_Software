@@ -442,3 +442,30 @@ Its complete options are `--storage INTERNAL|BACKUP` (default BACKUP), `--list`,
 `--file <name>` (repeatable), `--output <directory>` (default `downloaded_logs`),
 `--overwrite`, and `-h` / `--help`; the serial port is required. Run it from the
 Flight Software repository and connect USB to the Teensy whose logs are needed.
+
+## Prompt AIRDOS health updates
+
+AIRDOS 1–9 health is checked every 100 ms while connected. State changes
+(WAITING / OK / FAULT) and parser-overflow counter changes queue a new report
+without waiting for the 60-second periodic report. The existing 15-second
+no-data timeout still applies: this does not claim a sensor is faulty before
+that timeout. An observed disconnect triggers a complete report on reconnect.
+
+All HEALTH reports use 32 reserved slots keyed by subsystem and sensor (26
+identities currently used). A newer pending report replaces the old snapshot
+for that identity. Reports remain pending while rate-limited or if UDP sending
+fails; successful sends clear them. Round-robin selection prevents later
+sensor IDs from being systematically excluded. This is latest-state reporting,
+not a lossless history of every intermediate status transition. UDP reception
+is not acknowledged; periodic reports recover from network packet loss.
+
+The regular system queue increases from 32 to 64 entries, with 128 bytes of
+byte-ring capacity per entry. AIRDOS raw buffering remains unchanged. On the
+32-bit Teensy the added static storage is approximately 10 KB (including the
+5,504-byte health outbox). This does not bypass average/burst downlink limits.
+The displayed system queue count includes pending health snapshots.
+
+Host regression tests cover all 26 health identities with a full normal queue,
+replacement of pending state, retained reports on UDP failure/rate limiting,
+and eventual drain. Hardware timing and final firmware memory usage must be
+checked on the target build before flight.

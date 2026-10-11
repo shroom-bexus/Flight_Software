@@ -88,10 +88,54 @@ public:
     size_t byte_capacity() const { return sizeof(bytes_); }
 private:
     TelemetryLine lines_[Capacity];
-    uint8_t bytes_[Capacity * (Capacity > 32 ? 32 : 128)];
+    uint8_t bytes_[Capacity * (Capacity > 64 ? 32 : 128)];
     size_t head_=0, tail_=0, count_=0, byte_tail_=0, used_=0;
 };
 
+
+// Latest health per subsystem/sensor, separate from sampled telemetry.
+// Replacing a pending snapshot cannot discard another sensor's status.
+struct HealthSnapshot {
+    char key[40] = {};
+    uint8_t record[128] = {};
+    uint16_t length = 0;
+    bool pending = false;
+};
+HealthSnapshot health_snapshots[32];
+uint8_t health_cursor = 0;
+
+bool health_pending()
+{
+    for (const auto& item : health_snapshots) if (item.pending) return true;
+    return false;
+}
+
+bool queue_health(const char* message)
+{
+    const char* name = strchr(message + 7, ',');
+    if (!name) return false;
+    ++name;
+    const char* end = strchr(name, ',');
+    if (!end) return false;
+    if (strncmp(name, "AIRDOS,", 7) == 0 || strncmp(name, "MAX31865,", 9) == 0)
+        end = strchr(end + 1, ',');
+    if (!end || static_cast<size_t>(end - name) >= sizeof(health_snapshots[0].key)) return false;
+    char key[40] = {};
+    memcpy(key, name, end - name);
+    for (auto& item : health_snapshots)
+    {
+        if (item.key[0] && strcmp(item.key, key) != 0) continue;
+        uint8_t record[128];
+        const size_t length = binary_telemetry::record(message, record, sizeof(record));
+        if (!length) return false;
+        strcpy(item.key, key);
+        memcpy(item.record, record, length);
+        item.length = length;
+        item.pending = true;
+        return true;
+    }
+    return false;
+}
 
 EthernetUDP udp;
 
@@ -139,6 +183,8 @@ void reset_receive_buffer()
 void reset_telemetry_queues()
 {
     system_queue.clear();
+    for (auto& item : health_snapshots) item = HealthSnapshot{};
+    health_cursor = 0;
     airdos_queue.clear();
 }
 
@@ -546,7 +592,7 @@ size_t append_records(
 
 bool send_mixed_packet()
 {
-    if ((system_queue.empty() && airdos_queue.empty()) ||
+    if ((system_queue.empty() && airdos_queue.empty() && !health_pending()) ||
         !regular_send_ready())
     {
         return false;
@@ -559,13 +605,28 @@ bool send_mixed_packet()
 
     // Housekeeping remains first, but AIRDOS fills unused space in the same
     // datagram. This reduces overhead and avoids a burst of tiny system packets.
+    uint32_t health_mask = 0;
+    uint8_t next_health_cursor = health_cursor;
+    for (uint8_t offset = 0; offset < 32; ++offset)
+    {
+        const uint8_t index = (health_cursor + offset) % 32;
+        const auto& item = health_snapshots[index];
+        if (!item.pending) continue;
+        if (length + item.length > target && health_mask != 0) break;
+        if (length + item.length > sizeof(payload)) break;
+        memcpy(payload + length, item.record, item.length);
+        length += item.length;
+        health_mask |= uint32_t(1) << index;
+        next_health_cursor = (index + 1) % 32;
+        if (length >= target) break;
+    }
     size_t system_count = append_records(
         system_queue, payload, length, target);
     size_t airdos_count = 0;
 
     // If the first system record is larger than the slot target, send that
     // record alone. AIRDOS must never jump ahead of queued housekeeping.
-    if (!system_queue.empty() && system_count == 0)
+    if (!system_queue.empty() && system_count == 0 && health_mask == 0)
     {
         if (length + system_queue.front()->length <= sizeof(payload))
         {
@@ -583,7 +644,7 @@ bool send_mixed_packet()
     // A single long AIRDOS record may be larger than the 50 ms target. Send it
     // whole rather than fragmenting scientific data. Exact-rate and 200 ms
     // guards then delay following packets as required.
-    if (system_count == 0 && airdos_count == 0 && system_queue.empty())
+    if (health_mask == 0 && system_count == 0 && airdos_count == 0 && system_queue.empty())
     {
         if (!airdos_queue.empty() &&
             length + airdos_queue.front()->length <= sizeof(payload))
@@ -594,13 +655,16 @@ bool send_mixed_packet()
         }
     }
 
-    if (system_count == 0 && airdos_count == 0) return false;
+    if (health_mask == 0 && system_count == 0 && airdos_count == 0) return false;
     if (!send_regular_payload(
             reinterpret_cast<const char*>(payload), length))
     {
         return false;
     }
 
+    for (uint8_t i = 0; i < 32; ++i)
+        if (health_mask & (uint32_t(1) << i)) health_snapshots[i].pending = false;
+    health_cursor = next_health_cursor;
     system_queue.pop(system_count);
     airdos_queue.pop(airdos_count);
     return true;
@@ -625,7 +689,7 @@ void flush_telemetry()
     }
 
     // System telemetry may send on the next available slot immediately.
-    if (!system_queue.empty())
+    if (!system_queue.empty() || health_pending())
     {
         send_mixed_packet();
         return;
@@ -784,7 +848,11 @@ bool ethernet_link_send_line(const char* message)
 {
     if (!ethernet_link_connected() || message == nullptr) return false;
 
-    if (system_queue.push(message)) return true;
+    if (strncmp(message, "HEALTH,", 7) == 0)
+    {
+        if (queue_health(message)) return true;
+    }
+    else if (system_queue.push(message)) return true;
 
     ++telemetry_drop_count;
 
@@ -895,7 +963,9 @@ uint32_t ethernet_link_get_airdos_suppressed_count()
 
 uint16_t ethernet_link_get_system_queue_size()
 {
-    return static_cast<uint16_t>(system_queue.size());
+    uint16_t pending = 0;
+    for (const auto& item : health_snapshots) pending += item.pending;
+    return static_cast<uint16_t>(system_queue.size()) + pending;
 }
 
 

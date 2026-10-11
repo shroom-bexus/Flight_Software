@@ -56,6 +56,79 @@ void send_sensor_health(
     );
     ethernet_link_send_line(message);
 }
+void update_airdos_health(uint32_t time_ms, bool periodic)
+{
+    static uint32_t last_check_ms = 0;
+    if (!periodic && time_ms - last_check_ms < 100) return;
+    last_check_ms = time_ms;
+    static char last_state[9] = {};
+    static uint32_t last_errors[9] = {};
+    char message[96];
+#if ENABLE_AIRDOS
+    // For remote sensors, health here describes reception at the primary.
+    // Source parser-overflow counters arrive separately every five seconds.
+    for (uint8_t id = 1; id <= 7; ++id)
+    {
+        const bool received = teensy_link_has_received(id);
+        const uint32_t age = received
+            ? time_ms - teensy_link_last_received_ms(id) : 0;
+        const char* state = received
+            ? (age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
+            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
+        snprintf(message, sizeof(message), "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
+            static_cast<unsigned long>(time_ms), id, state,
+            static_cast<unsigned long>(age),
+            static_cast<unsigned long>(teensy_link_remote_overflows(id)));
+        const uint8_t index = id - 1;
+        const uint32_t errors = teensy_link_remote_overflows(id);
+        if (periodic || last_state[index] != state[0] || last_errors[index] != errors)
+        {
+            if (ethernet_link_send_line(message))
+            {
+                last_state[index] = state[0];
+                last_errors[index] = errors;
+            }
+        }
+    }
+
+    // Report each AIRDOS channel independently.
+    for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
+    {
+        uint32_t last_message_age = 0;
+        const bool received = airdos_has_received_data(i);
+        if (received)
+        {
+            last_message_age = time_ms - airdos_get_last_message_ms(i);
+        }
+
+        const char* state = received
+            ? (last_message_age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
+            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
+
+        snprintf(
+            message,
+            sizeof(message),
+            "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
+            static_cast<unsigned long>(time_ms),
+            airdos_get_sensor_id(i),
+            state,
+            static_cast<unsigned long>(last_message_age),
+            static_cast<unsigned long>(airdos_get_overflow_count(i))
+        );
+        const uint8_t index = airdos_get_sensor_id(i) - 1;
+        const uint32_t errors = airdos_get_overflow_count(i);
+        if (periodic || last_state[index] != state[0] || last_errors[index] != errors)
+        {
+            if (ethernet_link_send_line(message))
+            {
+                last_state[index] = state[0];
+                last_errors[index] = errors;
+            }
+        }
+    }
+#endif
+
+}
 } // namespace
 #endif
 
@@ -239,15 +312,18 @@ void telemetry_send_airdos(uint8_t sensor_id, const char* data)
 void telemetry_update()
 {
 #if ENABLE_ETHERNET
-    if (!ethernet_link_connected()) return;
+    if (!ethernet_link_connected())
+    {
+        system_telemetry_sent = false;
+        return;
+    }
 
     // Health data is periodic and uses one timestamp for the complete batch.
     const uint32_t time_ms = millis();
-    if (system_telemetry_sent &&
-        time_ms - last_health_time < SYSTEM_TELEMETRY_PERIOD_MS)
-    {
-        return;
-    }
+    const bool periodic = !system_telemetry_sent ||
+        time_ms - last_health_time >= SYSTEM_TELEMETRY_PERIOD_MS;
+    update_airdos_health(time_ms, periodic);
+    if (!periodic) return;
     last_health_time = time_ms;
     system_telemetry_sent = true;
 
@@ -341,51 +417,6 @@ void telemetry_update()
     );
 #endif
 
-#if ENABLE_AIRDOS
-    // For remote sensors, health here describes reception at the primary.
-    // Source parser-overflow counters arrive separately every five seconds.
-    for (uint8_t id = 1; id <= 7; ++id)
-    {
-        const bool received = teensy_link_has_received(id);
-        const uint32_t age = received
-            ? time_ms - teensy_link_last_received_ms(id) : 0;
-        const char* state = received
-            ? (age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
-            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
-        snprintf(message, sizeof(message), "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
-            static_cast<unsigned long>(time_ms), id, state,
-            static_cast<unsigned long>(age),
-            static_cast<unsigned long>(teensy_link_remote_overflows(id)));
-        ethernet_link_send_line(message);
-    }
-
-    // Report each AIRDOS channel independently.
-    for (uint8_t i = 0; i < AIRDOS_CHANNEL_COUNT; ++i)
-    {
-        uint32_t last_message_age = 0;
-        const bool received = airdos_has_received_data(i);
-        if (received)
-        {
-            last_message_age = time_ms - airdos_get_last_message_ms(i);
-        }
-
-        const char* state = received
-            ? (last_message_age <= AIRDOS_TIMEOUT_MS ? "OK" : "FAULT")
-            : (time_ms <= AIRDOS_TIMEOUT_MS ? "WAITING" : "FAULT");
-
-        snprintf(
-            message,
-            sizeof(message),
-            "HEALTH,%lu,AIRDOS,%u,%s,%lu,%lu",
-            static_cast<unsigned long>(time_ms),
-            airdos_get_sensor_id(i),
-            state,
-            static_cast<unsigned long>(last_message_age),
-            static_cast<unsigned long>(airdos_get_overflow_count(i))
-        );
-        ethernet_link_send_line(message);
-    }
-#endif
 
 #if ENABLE_THERMAL_CONTROL
     telemetry_send_thermal_config();
