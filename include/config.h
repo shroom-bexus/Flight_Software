@@ -287,7 +287,7 @@ constexpr size_t ETHERNET_UDP_PAYLOAD_MAX = 1200;
 // checked against a rolling 200 ms burst window.
 // The AIRDOS byte ring is 128 KiB, plus record descriptors.
 constexpr size_t ETHERNET_TELEMETRY_LINE_MAX = 1152;
-constexpr size_t ETHERNET_SYSTEM_QUEUE_DEPTH = 32;
+constexpr size_t ETHERNET_SYSTEM_QUEUE_DEPTH = 64;
 constexpr size_t ETHERNET_AIRDOS_QUEUE_DEPTH = 4096;
 constexpr uint32_t ETHERNET_TELEMETRY_SLOT_US = 50000;
 constexpr uint32_t ETHERNET_BURST_WINDOW_US = 200000;

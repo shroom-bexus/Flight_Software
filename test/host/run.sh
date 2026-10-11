@@ -22,3 +22,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -DFLIGHT_PRIMARY=1 -Itest/binary -Iinclude \
     test/binary/queue.cpp -o "$test_dir/queue"
 "$test_dir/queue"
+
+g++ -std=c++17 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+    -DFLIGHT_PRIMARY=1 -Itest/host -Iinclude test/host/health_test.cpp \
+    -Wl,--gc-sections -o "$test_dir/health"
+"$test_dir/health"
