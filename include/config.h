@@ -177,10 +177,14 @@ constexpr float THERMAL_MAX_OUTPUT_PERCENT = 100.0f;
 constexpr float THERMAL_MAX_TEMPERATURE_K = 313.15f;
 
 // Heating-plate temperature limiter
-// TEMP_3 is the temperature sensor mounted on the heating plate.
+// TEMP_3 and TEMP_4 are mounted on the heating plate. This is the default;
+// SET_PLATE_SENSOR selects either sensor persistently at runtime.
 // HEATING_PLATE_HEATER selects which heater output is inhibited when the
 // limiter trips: 0 = all heaters, 1..4 = one physical heater channel.
 constexpr TempSensor HEATING_PLATE_TEMP_SENSOR = TempSensor::TEMP_3;
+static_assert(HEATING_PLATE_TEMP_SENSOR == TempSensor::TEMP_3 ||
+              HEATING_PLATE_TEMP_SENSOR == TempSensor::TEMP_4,
+              "Plate sensor must be TEMP_3 or TEMP_4.");
 constexpr uint8_t HEATING_PLATE_HEATER = 0;
 constexpr bool HEATING_PLATE_LIMIT_DEFAULT_ENABLED = false;
 constexpr float HEATING_PLATE_LIMIT_DEFAULT_K = 323.15f; // 50 °C

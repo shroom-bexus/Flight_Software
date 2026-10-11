@@ -119,7 +119,7 @@ void telemetry_send_plate_limit()
         thermal_control_get_plate_limit(),
         plate_temperature_k,
         thermal_control_plate_limit_tripped() ? 1 : 0,
-        static_cast<unsigned int>(HEATING_PLATE_TEMP_SENSOR) + 1,
+        static_cast<unsigned int>(thermal_control_get_plate_sensor()) + 1,
         static_cast<unsigned int>(HEATING_PLATE_HEATER)
     );
     ethernet_link_send_line(message);

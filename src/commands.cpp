@@ -226,6 +226,19 @@ void handle_plate_limit_off(const char*)
     telemetry_send_plate_limit();
 }
 
+void handle_set_plate_sensor(const char* args)
+{
+    if (!args || (strcmp(args, "3") != 0 && strcmp(args, "4") != 0))
+    {
+        send_reply("NACK", "SET_PLATE_SENSOR", "INVALID_VALUE");
+        return;
+    }
+    thermal_control_set_plate_sensor(
+        args[0] == '3' ? TempSensor::TEMP_3 : TempSensor::TEMP_4);
+    send_reply("ACK", "SET_PLATE_SENSOR", args);
+    telemetry_send_plate_limit();
+}
+
 void handle_set_plate_limit(const char* args)
 {
     float limit_k;
@@ -398,6 +411,7 @@ const CommandEntry command_table[] =
     {"PLATE_LIMIT_ON", handle_plate_limit_on},
     {"PLATE_LIMIT_OFF", handle_plate_limit_off},
     {"SET_PLATE_LIMIT", handle_set_plate_limit},
+    {"SET_PLATE_SENSOR", handle_set_plate_sensor},
     {"SET_THERMAL_MODE", handle_set_thermal_mode},
     {"SET_MODE", handle_set_thermal_mode},
     {"SET_THERMAL_FUSION", handle_set_thermal_fusion},

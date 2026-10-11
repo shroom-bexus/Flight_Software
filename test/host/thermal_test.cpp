@@ -264,5 +264,33 @@ int main() {
         thermal_control_get_plate_limit() - HEATING_PLATE_LIMIT_DEFAULT_K
     ) < 0.001f);
 
+    // Migrate v5 without losing existing limits or PID settings.
+    settings.version = 5;
+    settings.plate_limit_k = 320.0f;
+    settings.plate_limit_enabled = true;
+    settings.plate_sensor = static_cast<TempSensor>(255);
+    save_settings();
+    thermal_control_init();
+    assert(thermal_control_get_plate_sensor() == HEATING_PLATE_TEMP_SENSOR);
+    assert(thermal_control_get_plate_limit() == 320.0f);
+    assert(thermal_control_plate_limit_is_enabled());
+    assert(thermal_control_get_kp() == 7);
+    plate_temperature = 290.0f;
+    temperature = 330.0f;
+    assert(thermal_control_set_plate_sensor(TempSensor::TEMP_4));
+    assert(thermal_control_get_plate_temperature() == 330.0f);
+    assert(thermal_control_plate_limit_tripped());
+    for (float p : powers) assert(p == 0);
+    thermal_control_init();
+    assert(thermal_control_get_plate_sensor() == TempSensor::TEMP_4);
+    assert(!thermal_control_set_plate_sensor(TempSensor::TEMP_8));
+    assert(thermal_control_get_plate_sensor() == TempSensor::TEMP_4);
+    valid = false;
+    thermal_control_enforce_plate_limit();
+    assert(thermal_control_plate_limit_tripped());
+    assert(std::isnan(thermal_control_get_plate_temperature()));
+    assert(thermal_control_set_plate_sensor(TempSensor::TEMP_3));
+    assert(thermal_control_get_plate_temperature() == 290.0f);
+    assert(!thermal_control_plate_limit_tripped());
     puts("Thermal controller regression checks passed");
 }

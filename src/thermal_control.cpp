@@ -29,7 +29,7 @@ struct ControllerState
 
 // The marker distinguishes saved settings from unused EEPROM contents.
 constexpr uint32_t SETTINGS_MAGIC = 0x5348524D; // "SHRM"
-constexpr uint32_t SETTINGS_VERSION = 5;
+constexpr uint32_t SETTINGS_VERSION = 6;
 
 // These operator settings must survive a short power interruption or reset.
 struct PersistentSettings
@@ -49,6 +49,7 @@ struct PersistentSettings
     ThermalFusionMode fusion_mode;
     bool plate_limit_enabled;
     float plate_limit_k;
+    TempSensor plate_sensor;
 };
 
 ControllerState controller;
@@ -89,6 +90,7 @@ void set_fusion_default()
 
 void set_plate_limit_defaults()
 {
+    settings.plate_sensor = HEATING_PLATE_TEMP_SENSOR;
     settings.plate_limit_enabled = HEATING_PLATE_LIMIT_DEFAULT_ENABLED;
     settings.plate_limit_k = HEATING_PLATE_LIMIT_DEFAULT_K;
 }
@@ -240,7 +242,7 @@ bool plate_heater_selected(Heater heater)
 
 bool read_plate_temperature(float& temperature_k)
 {
-    const TempSensor sensor = HEATING_PLATE_TEMP_SENSOR;
+    const TempSensor sensor = settings.plate_sensor;
     if (!max31865_is_enabled(sensor) || !max31865_data_valid(sensor))
     {
         temperature_k = NAN;
@@ -329,7 +331,7 @@ void load_settings()
     // Version 2 already contained PID gains. Versions 3 and 4 keep the same
     // prefix, so append-only migration preserves all operator settings.
     if ((stored_version != 2 && stored_version != 3 &&
-         stored_version != 4 && stored_version != SETTINGS_VERSION) ||
+         stored_version != 4 && stored_version != 5 && stored_version != SETTINGS_VERSION) ||
         !pid_values_valid(settings.kp, settings.ki, settings.kd))
     {
         set_pid_defaults();
@@ -354,10 +356,18 @@ void load_settings()
     }
 
     // Heating-plate limiter settings were appended in version 5.
-    if (stored_version != SETTINGS_VERSION ||
+    if (stored_version < 5 || stored_version > SETTINGS_VERSION ||
         !plate_limit_value_valid(settings.plate_limit_k))
     {
         set_plate_limit_defaults();
+        settings_changed = true;
+    }
+
+    if (stored_version < 6 ||
+        (settings.plate_sensor != TempSensor::TEMP_3 &&
+         settings.plate_sensor != TempSensor::TEMP_4))
+    {
+        settings.plate_sensor = HEATING_PLATE_TEMP_SENSOR;
         settings_changed = true;
     }
 
@@ -739,5 +749,20 @@ bool thermal_control_set_bang_bang_power(float power_percent)
     settings.bang_bang_power = power_percent;
     save_settings();
     if (controller.enabled && settings.mode == ThermalMode::BANG_BANG) reset_controller();
+    return true;
+}
+
+TempSensor thermal_control_get_plate_sensor()
+{
+    return settings.plate_sensor;
+}
+
+bool thermal_control_set_plate_sensor(TempSensor sensor)
+{
+    if (sensor != TempSensor::TEMP_3 && sensor != TempSensor::TEMP_4) return false;
+    if (settings.plate_sensor == sensor) return true;
+    settings.plate_sensor = sensor;
+    thermal_control_enforce_plate_limit();
+    save_settings();
     return true;
 }

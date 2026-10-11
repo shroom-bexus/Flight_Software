@@ -5,6 +5,7 @@
 #define FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 
 #include <stdint.h>
+#include "max31865.h"
 
 enum class ThermalMode : unsigned char { PID = 0, BANG_BANG = 1 };
 enum class ThermalFusionMode : unsigned char
@@ -153,5 +154,11 @@ bool thermal_control_plate_limit_tripped();
 /** @brief Apply the plate limiter immediately to current physical outputs. */
 void thermal_control_enforce_plate_limit();
 
-#endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H
 
+
+
+/** Select TEMP 3 or TEMP 4 for plate safety; selection survives reset. */
+bool thermal_control_set_plate_sensor(TempSensor sensor);
+TempSensor thermal_control_get_plate_sensor();
+
+#endif // FLIGHT_SOFTWARE_THERMAL_CONTROL_H
