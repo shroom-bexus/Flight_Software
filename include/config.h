@@ -272,7 +272,7 @@ constexpr uint32_t AIRDOS_DOWNLINK_REDUCE_HOLD_MS = 1500;
 constexpr uint32_t AIRDOS_DOWNLINK_RESTORE_HOLD_MS = 30000;
 
 // Ethernet
-constexpr uint8_t ETHERNET_LOCAL_IP[] = {172, 16, 18, 131};
+constexpr uint8_t ETHERNET_LOCAL_IP[] = {172, 16, 18, 141};
 constexpr uint8_t ETHERNET_SUBNET[] = {255, 255, 255, 0}; // TODO: confirm with SSC
 constexpr uint8_t ETHERNET_GATEWAY[] = {0, 0, 0, 0};
 constexpr uint8_t ETHERNET_DNS[] = {0, 0, 0, 0};
