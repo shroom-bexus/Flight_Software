@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <elapsedMillis.h>
+#include <cmath>
 
 #include "config.h"
 #include "logger.h"
@@ -38,6 +39,9 @@
 #if ENABLE_WSEN_PADS
 #include "wsen_pads.h"
 #endif
+
+// Teensy 4.1 / i.MX RT1062 on-die temperature monitor (°C).
+extern float tempmonGetTemp(void);
 
 namespace
 {
@@ -86,6 +90,25 @@ void update_ethernet()
     {
         commands_handle(ethernet_rx_line);
     }
+#endif
+}
+
+void update_cpu_temperature()
+{
+    // Both boards keep a 5 s local record, even if Ethernet is disconnected.
+    static uint32_t last_sample_ms = 0;
+    const uint32_t now_ms = millis();
+    if (now_ms - last_sample_ms < HEALTH_TELEMETRY_PERIOD_MS) return;
+    last_sample_ms = now_ms;
+
+    const float temperature_c = tempmonGetTemp();
+    if (!std::isfinite(temperature_c) ||
+        temperature_c < -55.0f || temperature_c > 150.0f) return;
+
+    logger_log_cpu_temperature(FLIGHT_PRIMARY ? "PRIMARY" : "SECONDARY", temperature_c);
+#if FLIGHT_SECONDARY
+    // Non-blocking; local SD recording is independent of UART availability.
+    teensy_link_send_cpu_temperature(temperature_c);
 #endif
 }
 
@@ -280,6 +303,7 @@ void loop()
     // Cooperative scheduler: every module decides whether work is due.
     teensy_link_update();
     update_ethernet();
+    update_cpu_temperature();
     update_max31865();
     update_pads();
     update_hids();
