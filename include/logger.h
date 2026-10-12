@@ -131,6 +131,12 @@ uint8_t logger_get_backup_sd_error_data();
  */
 bool logger_enter_download_mode();
 
+/** Delete SHROOM CSV logs on one local card, preserving the filesystem.
+ *  Flush/close and reopen both sets of log writers. Returns false for a
+ *  failed deletion or reopen. Refuses operation in USB download mode.
+ */
+bool logger_erase_storage(LoggerStorage storage);
+
 
 /** @brief Check whether a storage device can be read. */
 bool logger_download_storage_available(LoggerStorage storage);
