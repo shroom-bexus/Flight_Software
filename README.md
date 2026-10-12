@@ -419,6 +419,26 @@ with `ACK_SESSION,<session>`. The GS handles session negotiation and retries.
 protocol temperatures and CSV temperature columns use Kelvin; hysteresis is a
 temperature difference, so its numeric value is identical in K and °C.
 
+### Remote log erase (update both Teensys)
+
+In the Groundstation terminal, `erase backup` selects both XTSD backup
+cards and `erase sd` selects both internal SD cards. Neither immediately
+erases anything: run `erase backup confirm` or `erase sd confirm` within
+30 seconds to execute. The compact UDP commands are `ERASE_B,YES` and
+`ERASE_I,YES`. Both Teensys must run updated firmware.
+
+Only SHROOM CSV recordings (`airdos.csv`, `max31865.csv`,
+`wsen_pads.csv`, `wsen_hids.csv`, and `wsen_isds.csv`) are deleted.
+This is not a filesystem format; other files remain. The recorder closes
+both sets of files during maintenance, then reopens them with headers.
+Do not erase during flight or while measurements matter: blocking storage
+calls can lose samples. Download and verify needed data first.
+
+The first ACK/WARN reports PRIMARY_OK or PRIMARY_FAILED, with the Secondary
+still PENDING. A subsequent ERASE_RESULT reports Secondary OK, FAILED or
+TIMEOUT. A Secondary timeout does not prove the erase succeeded.
+The Secondary deduplicates retransmissions to avoid a second erase.
+
 ### USB log-download commands
 
 These are USB serial commands, not GS terminal or UDP commands. Download mode
