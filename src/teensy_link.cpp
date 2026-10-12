@@ -39,8 +39,67 @@ struct StorageStatus {
 };
 StorageStatus storage_status[2];
 
+struct EraseRequest
+{
+    bool pending = false;
+    bool result_ready = false;
+    uint16_t id = 0;
+    uint32_t token = 0;
+    char storage = 'I';
+    const char* result = "TIMEOUT";
+    uint32_t started_ms = 0;
+    uint32_t sent_ms = 0;
+    uint8_t attempts = 0;
+};
+EraseRequest erase_request;
+
+void update_erase_request()
+{
+    if (!erase_request.pending) return;
+    const uint32_t now = millis();
+    if (now - erase_request.started_ms >= 12000 ||
+        (erase_request.attempts >= 8 && now - erase_request.sent_ms >= 800))
+    {
+        erase_request.pending = false;
+        erase_request.result_ready = true;
+        erase_request.result = "TIMEOUT";
+        return;
+    }
+    if (erase_request.attempts && now - erase_request.sent_ms < 800) return;
+    char frame[32];
+    const int size = snprintf(frame, sizeof(frame), "\n!C,%lu,%c\n",
+        static_cast<unsigned long>(erase_request.token), erase_request.storage);
+    if (size <= 0 || static_cast<size_t>(size) >= sizeof(frame) ||
+        TEENSY_LINK_SERIAL.availableForWrite() < size) return;
+    TEENSY_LINK_SERIAL.write(reinterpret_cast<const uint8_t*>(frame), size);
+    erase_request.sent_ms = now;
+    ++erase_request.attempts;
+}
+
 void receive_line()
 {
+    // The Secondary acknowledges each erase separately. Ignore late replies.
+    if (strncmp(line, "!R,", 3) == 0)
+    {
+        unsigned long token = 0;
+        char storage = 0, outcome = 0, extra = 0;
+        if (sscanf(line, "!R,%lu,%c,%c%c", &token, &storage, &outcome, &extra) != 3 ||
+            (storage != 'I' && storage != 'B') ||
+            (outcome != '0' && outcome != '1'))
+        {
+            ++errors;
+            return;
+        }
+        mark_link_received();
+        if (erase_request.pending && erase_request.token == token &&
+            erase_request.storage == storage)
+        {
+            erase_request.pending = false;
+            erase_request.result_ready = true;
+            erase_request.result = outcome == '1' ? "OK" : "FAILED";
+        }
+        return;
+    }
     // Storage frame: !S,<0 internal|1 backup>,<0 disabled|1 OK|2 fault>,<errors>.
     if (strncmp(line, "!S,", 3) == 0)
     {
@@ -104,6 +163,76 @@ void receive_line()
     logger_log_airdos(id, line + 5);
     telemetry_send_airdos(id, line + 5);
 }
+#else
+// The Secondary also receives short, framed maintenance commands.
+char command_line[32];
+size_t command_length = 0;
+bool command_discard = true;
+bool ack_pending = false;
+uint32_t last_erase_token = 0;
+char last_erase_storage = 'I';
+bool last_erase_ok = false;
+bool have_last_erase = false;
+uint32_t last_erase_ms = 0;
+
+void handle_erase_command()
+{
+    unsigned long token = 0;
+    char storage = 0, extra = 0;
+    if (sscanf(command_line, "!C,%lu,%c%c", &token, &storage, &extra) != 2 ||
+        (storage != 'I' && storage != 'B'))
+    {
+        ++errors;
+        return;
+    }
+    // A retry after losing the ACK cannot erase newly logged samples again.
+    if (!have_last_erase || token != last_erase_token ||
+        storage != last_erase_storage || millis() - last_erase_ms > 15000)
+    {
+        last_erase_ok = logger_erase_storage(
+            storage == 'I' ? LoggerStorage::INTERNAL : LoggerStorage::BACKUP);
+        last_erase_token = static_cast<uint32_t>(token);
+        last_erase_storage = storage;
+        last_erase_ms = millis();
+        have_last_erase = true;
+    }
+    ack_pending = true;
+}
+
+void update_secondary_erase()
+{
+    for (size_t count = 0; count < 64 && TEENSY_LINK_SERIAL.available(); ++count)
+    {
+        const char c = static_cast<char>(TEENSY_LINK_SERIAL.read());
+        if (c == '\n')
+        {
+            if (!command_discard && command_length)
+            {
+                command_line[command_length] = '\0';
+                handle_erase_command();
+            }
+            command_length = 0;
+            command_discard = false;
+        }
+        else if (!command_discard)
+        {
+            if (c < 32 || c > 126 || command_length >= sizeof(command_line) - 1)
+                command_discard = true;
+            else command_line[command_length++] = c;
+        }
+    }
+    if (!ack_pending) return;
+    char reply[32];
+    const int size = snprintf(reply, sizeof(reply), "\n!R,%lu,%c,%c\n",
+        static_cast<unsigned long>(last_erase_token), last_erase_storage,
+        last_erase_ok ? '1' : '0');
+    if (size > 0 && static_cast<size_t>(size) < sizeof(reply) &&
+        TEENSY_LINK_SERIAL.availableForWrite() >= size)
+    {
+        TEENSY_LINK_SERIAL.write(reinterpret_cast<const uint8_t*>(reply), size);
+        ack_pending = false;
+    }
+}
 #endif
 }
 
@@ -120,8 +249,13 @@ void teensy_link_init()
     memset(last_received, 0, sizeof(last_received));
     memset(remote_overflows, 0, sizeof(remote_overflows));
     for (auto& status : storage_status) status = StorageStatus{};
+    erase_request = EraseRequest{};
     TEENSY_LINK_SERIAL.addMemoryForRead(uart_buffer, sizeof(uart_buffer));
 #else
+    command_length = 0;
+    command_discard = true;
+    ack_pending = false;
+    have_last_erase = false;
     TEENSY_LINK_SERIAL.addMemoryForWrite(uart_buffer, sizeof(uart_buffer));
 #endif
     TEENSY_LINK_SERIAL.begin(TEENSY_LINK_BAUD_RATE);
@@ -184,7 +318,9 @@ void teensy_link_update()
             else line[length++] = c;
         }
     }
+    update_erase_request();
 #else
+    update_secondary_erase();
     static uint32_t last_status = 0;
     if (millis() - last_status >= HEALTH_TELEMETRY_PERIOD_MS)
     {
@@ -227,6 +363,50 @@ void teensy_link_update()
         }
         last_report = millis();
     }
+#endif
+}
+
+bool teensy_link_request_erase(uint16_t command_id, char storage)
+{
+#if FLIGHT_PRIMARY
+    if ((storage != 'I' && storage != 'B') ||
+        erase_request.pending || erase_request.result_ready) return false;
+    erase_request = EraseRequest{};
+    erase_request.pending = true;
+    erase_request.id = command_id;
+    erase_request.token = (millis() * 2654435761UL) ^
+        (static_cast<uint32_t>(command_id) << 16) ^ 0xA5967C31UL;
+    erase_request.storage = storage;
+    erase_request.started_ms = millis();
+    return true;
+#else
+    (void)command_id;
+    (void)storage;
+    return false;
+#endif
+}
+
+bool teensy_link_get_erase_result(uint16_t& command_id, char& storage,
+                                  const char*& result)
+{
+#if FLIGHT_PRIMARY
+    if (!erase_request.result_ready) return false;
+    command_id = erase_request.id;
+    storage = erase_request.storage;
+    result = erase_request.result;
+    return true;
+#else
+    (void)command_id;
+    (void)storage;
+    (void)result;
+    return false;
+#endif
+}
+
+void teensy_link_clear_erase_result()
+{
+#if FLIGHT_PRIMARY
+    erase_request.result_ready = false;
 #endif
 }
 
