@@ -4,6 +4,8 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cmath>
+#include <cstdlib>
 #include "airdos.h"
 #include "config.h"
 #include "logger.h"
@@ -38,9 +40,32 @@ struct StorageStatus {
     uint32_t received_ms = 0;
 };
 StorageStatus storage_status[2];
+bool secondary_cpu_received = false;
+float secondary_cpu_c = 0.0f;
+uint32_t secondary_cpu_received_ms = 0;
 
 void receive_line()
 {
+    // Secondary die temperature: !T,<degrees_C>. Only complete, finite frames.
+    if (strncmp(line, "!T,", 3) == 0)
+    {
+        char* end = nullptr;
+        const float temperature_c = std::strtof(line + 3, &end);
+        if (end == line + 3 || *end != '\0' ||
+            !std::isfinite(temperature_c) ||
+            temperature_c < -55.0f || temperature_c > 150.0f)
+        {
+            ++errors;
+            return;
+        }
+        mark_link_received();
+        secondary_cpu_received = true;
+        secondary_cpu_c = temperature_c;
+        secondary_cpu_received_ms = millis();
+        // Duplicate this record to Primary internal and backup SD.
+        logger_log_cpu_temperature("SECONDARY", temperature_c);
+        return;
+    }
     // Storage frame: !S,<0 internal|1 backup>,<0 disabled|1 OK|2 fault>,<errors>.
     if (strncmp(line, "!S,", 3) == 0)
     {
@@ -120,6 +145,9 @@ void teensy_link_init()
     memset(last_received, 0, sizeof(last_received));
     memset(remote_overflows, 0, sizeof(remote_overflows));
     for (auto& status : storage_status) status = StorageStatus{};
+    secondary_cpu_received = false;
+    secondary_cpu_c = 0.0f;
+    secondary_cpu_received_ms = 0;
     TEENSY_LINK_SERIAL.addMemoryForRead(uart_buffer, sizeof(uart_buffer));
 #else
     TEENSY_LINK_SERIAL.addMemoryForWrite(uart_buffer, sizeof(uart_buffer));
@@ -153,6 +181,38 @@ bool teensy_link_send_airdos(uint8_t sensor_id, const char* data)
 #else
     (void)sensor_id;
     (void)data;
+    return false;
+#endif
+}
+
+bool teensy_link_send_cpu_temperature(float temperature_c)
+{
+#if FLIGHT_SECONDARY
+    if (!std::isfinite(temperature_c) ||
+        temperature_c < -55.0f || temperature_c > 150.0f) return false;
+    char status[32];
+    const int size = snprintf(status, sizeof(status), "\n!T,%.2f\n",
+                              static_cast<double>(temperature_c));
+    if (size <= 0 || static_cast<size_t>(size) >= sizeof(status) ||
+        TEENSY_LINK_SERIAL.availableForWrite() < size) return false;
+    TEENSY_LINK_SERIAL.write(reinterpret_cast<const uint8_t*>(status), size);
+    return true;
+#else
+    (void)temperature_c;
+    return false;
+#endif
+}
+
+bool teensy_link_secondary_cpu_temperature(float* temperature_c)
+{
+#if FLIGHT_PRIMARY
+    if (!temperature_c || !secondary_cpu_received ||
+        millis() - secondary_cpu_received_ms > 3 * HEALTH_TELEMETRY_PERIOD_MS)
+        return false;
+    *temperature_c = secondary_cpu_c;
+    return true;
+#else
+    (void)temperature_c;
     return false;
 #endif
 }
