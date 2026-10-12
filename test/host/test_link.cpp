@@ -7,6 +7,11 @@
 #include <utility>
 
 std::vector<std::pair<uint8_t, std::string>> logged, downlinked;
+std::vector<std::pair<std::string, float>> cpu_logged;
+void logger_log_cpu_temperature(const char* source, float value)
+{
+    cpu_logged.emplace_back(source, value);
+}
 void logger_log_airdos(uint8_t id, const char* data) { logged.emplace_back(id, data); }
 void telemetry_send_airdos(uint8_t id, const char* data) { downlinked.emplace_back(id, data); }
 
@@ -107,6 +112,18 @@ int main() {
     assert(std::string(teensy_link_storage_state(1)) == "STALE");
     fake_time = 0;
     assert(std::string(teensy_link_storage_state(1)) == "WAITING");
+    float cpu_temp = 0.0f;
+    assert(!teensy_link_secondary_cpu_temperature(&cpu_temp));
+    Serial1.inject("\n!T,43.25\n");
+    teensy_link_update();
+    assert(teensy_link_secondary_cpu_temperature(&cpu_temp));
+    assert(cpu_temp == 43.25f && cpu_logged.size() == 1);
+    assert(cpu_logged.back().first == "SECONDARY");
+    fake_time += 3 * HEALTH_TELEMETRY_PERIOD_MS + 1;
+    assert(!teensy_link_secondary_cpu_temperature(&cpu_temp));
+    Serial1.inject("\n!T,nan\n!T,43.25junk\n");
+    teensy_link_update();
+    assert(cpu_logged.size() == 1);
 #else
     // Check physical serial mapping and preservation of comma-rich payloads.
     HardwareSerialIMXRT* inputs[] = {&Serial2, &Serial3, &Serial4, &Serial5,
@@ -144,6 +161,10 @@ int main() {
     fake_time += HEALTH_TELEMETRY_PERIOD_MS;
     teensy_link_update();
     assert(Serial1.tx == before); // Status cannot block when TX is full.
+    Serial1.room = 32768;
+    assert(teensy_link_send_cpu_temperature(43.25f));
+    assert(Serial1.tx.find("\n!T,43.25\n") != std::string::npos);
+    assert(!teensy_link_send_cpu_temperature(NAN));
 #endif
     std::cout << (FLIGHT_PRIMARY ? "primary" : "secondary") << " host tests passed\n";
 }
