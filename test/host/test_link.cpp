@@ -165,7 +165,7 @@ int main() {
     Serial1.room = 32768;
     assert(teensy_link_send_cpu_temperature(43.25f));
     assert(Serial1.tx.find("\n!T,43.25\n") != std::string::npos);
-    assert(!teensy_link_send_cpu_temperature(NAN));
+    assert(!teensy_link_send_cpu_temperature(std::numeric_limits<float>::quiet_NaN()));
 #endif
     std::cout << (FLIGHT_PRIMARY ? "primary" : "secondary") << " host tests passed\n";
 }
