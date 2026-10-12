@@ -678,6 +678,59 @@ uint8_t logger_get_backup_sd_error_data()
 }
 
 
+bool logger_erase_storage(LoggerStorage storage)
+{
+#if !ENABLE_SD_LOGGING && !ENABLE_BACKUP_SD_LOGGING
+    (void)storage;
+    return false;
+#else
+    if (download_mode) return false;
+    if (storage == LoggerStorage::INTERNAL && !internal_sd_ready) return false;
+    if (storage == LoggerStorage::BACKUP && !backup_sd_ready) return false;
+
+    // Remove only the defined SHROOM recordings. Do not format the SD card.
+    const char* const filenames[] = {
+        "airdos.csv", "max31865.csv", "wsen_pads.csv",
+        "wsen_hids.csv", "wsen_isds.csv"
+    };
+    flush_all_files();
+    close_all_files();
+    bool success = true;
+    for (const char* filename : filenames)
+    {
+        bool removed = false;
+        if (storage == LoggerStorage::INTERNAL)
+        {
+#if ENABLE_SD_LOGGING
+            removed = !SD.exists(filename) || SD.remove(filename);
+#endif
+        }
+        else
+        {
+#if ENABLE_BACKUP_SD_LOGGING
+            removed = !backup_sd.exists(filename) || backup_sd.remove(filename);
+#endif
+        }
+        if (!removed)
+        {
+            success = false;
+            if (storage == LoggerStorage::INTERNAL) ++internal_sd_error_count;
+            else ++backup_sd_error_count;
+        }
+    }
+
+    // Reopen both destinations, including the untouched card. Empty files
+    // receive the correct CSV header through MirroredLogFile::open.
+    for (const LogEntry& log : log_files)
+        if (log.file) log.file->open(log.filename, log.header);
+    if (!internal_sd_ready) close_internal_files();
+    if (!backup_sd_ready) close_backup_files();
+    return success && (storage == LoggerStorage::INTERNAL
+        ? internal_sd_ready : backup_sd_ready);
+#endif
+}
+
+
 bool logger_enter_download_mode()
 {
 #if !ENABLE_SD_LOGGING && !ENABLE_BACKUP_SD_LOGGING
