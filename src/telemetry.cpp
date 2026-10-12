@@ -4,9 +4,12 @@
 #include "telemetry.h"
 
 #include <Arduino.h>
+#include <cmath>
 
 #include "config.h"
 #include "teensy_link.h"
+
+extern float tempmonGetTemp(void);
 
 #if ENABLE_ETHERNET
 #include "airdos.h"
@@ -328,6 +331,24 @@ void telemetry_update()
     system_telemetry_sent = true;
 
     char message[96];
+
+    // CPU temperatures are housekeeping, not high-rate science downlink.
+    const float primary_cpu_c = tempmonGetTemp();
+    if (std::isfinite(primary_cpu_c) && primary_cpu_c >= -55.0f &&
+        primary_cpu_c <= 150.0f)
+    {
+        snprintf(message, sizeof(message), "CPU_TEMP,%lu,PRIMARY,%.2f",
+            static_cast<unsigned long>(time_ms), static_cast<double>(primary_cpu_c));
+        ethernet_link_send_line(message);
+    }
+
+    float secondary_cpu_c = 0.0f;
+    if (teensy_link_secondary_cpu_temperature(&secondary_cpu_c))
+    {
+        snprintf(message, sizeof(message), "CPU_TEMP,%lu,SECONDARY,%.2f",
+            static_cast<unsigned long>(time_ms), static_cast<double>(secondary_cpu_c));
+        ethernet_link_send_line(message);
+    }
 
     snprintf(message, sizeof(message), "HEALTH,%lu,SECONDARY,%s,%lu",
         static_cast<unsigned long>(time_ms), teensy_link_state(),
