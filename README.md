@@ -489,3 +489,53 @@ Host regression tests cover all 26 health identities with a full normal queue,
 replacement of pending state, retained reports on UDP failure/rate limiting,
 and eventual drain. Hardware timing and final firmware memory usage must be
 checked on the target build before flight.
+
+## Hardware watchdog (both Teensys)
+
+Both builds arm the Teensy 4.1 hardware **WDT1** near the beginning of
+`setup()`. If foreground execution stops making progress for approximately
+**30 seconds**, the watchdog resets that Teensy. The timeout is configured by
+`WATCHDOG_TIMEOUT_SECONDS` in `include/config.h` (whole seconds, 1–128).
+The WDT_T4 dependency is pinned to a specific commit in `platformio.ini`.
+No additional wiring or ground-station command is required.
+
+- Primary heater outputs are initialized OFF before the USB startup delay and
+  slow peripheral initialization. After reset, the existing startup and saved
+  thermal-configuration restoration run normally; the watchdog does not latch
+  heating OFF permanently.
+- Startup feeds occur after initialization stages return. A stuck initialization
+  stage is therefore covered, but code before `setup()` is not.
+- During flight, feeding happens only after a complete scheduler pass,
+  including telemetry and SD logging. There is no timer ISR, `yield()` hook,
+  or network heartbeat feeding the watchdog. Losing Ethernet or the secondary
+  alone does not cause a watchdog reset if the scheduler still runs.
+- USB download mode feeds after each incremental download update, including
+  idle waits for the host. A long transfer is allowed; a blocked SD operation
+  remains covered.
+- The reset is performed by hardware without an interrupt callback. The boot
+  banner prints the timeout and whether WDT1 reports a previous timeout.
+  This diagnostic is USB-only; no downlink packet format changes are required.
+
+A watchdog reset is not a graceful shutdown: buffered SD data may be lost, and
+it does not power-cycle external sensors. Any single blocking operation longer
+than the timeout also causes a reset, including a legitimate slow SD operation.
+In particular, test removal of large recordings with `ERASE` on the actual
+cards before using this branch operationally. The watchdog is deliberately not
+fed inside SD drivers, since that would hide a stuck driver.
+
+### Bench validation before flight
+
+Build both targets with `pio run -e primary -e secondary`. On each physical
+Teensy, verify normal startup and sustained logging with the actual SD cards,
+missing sensors, Ethernet disconnection, and a USB download lasting longer
+than 30 seconds. Confirm no unexpected resets and verify the downloaded file.
+
+For a deliberate fault test, use a **temporary local test build**, with heater
+power disconnected: insert `while (true) {}` at the beginning of `loop()`.
+The board should reset approximately 30 seconds after its last startup feed,
+then print `Previous watchdog timeout: YES`. This test build will reset
+repeatedly; remove the inserted loop and flash the normal build afterward.
+Repeat with `__disable_irq(); while (true) {}` to test an interrupt-disabled
+hang. Verify that logging, secondary forwarding, saved settings, and GS
+reconnection recover after the reset. Compilation alone does not validate the
+physical reset or heater behavior.

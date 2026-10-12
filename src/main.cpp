@@ -12,6 +12,7 @@
 #include "storage_download.h"
 #include "telemetry.h"
 #include "teensy_link.h"
+#include "watchdog.h"
 
 #if ENABLE_AIRDOS
 #include "airdos.h"
@@ -205,6 +206,11 @@ void update_airdos()
 
 void setup()
 {
+#if ENABLE_HEATERS
+    // Establish safe outputs before USB delay or any peripheral initialization.
+    heater_init();
+#endif
+    watchdog_init();
     Serial.begin(115200);
     // Give the USB serial connection time to appear after power-up.
     delay(2000);
@@ -214,6 +220,7 @@ void setup()
     Serial.println(FLIGHT_PRIMARY ? "Target: PRIMARY" : "Target: SECONDARY");
     Serial.print("Version: ");
     Serial.println(FLIGHT_VERSION);
+    watchdog_print_status();
     Serial.println();
 
 #if ENABLE_WSEN_PADS || ENABLE_WSEN_HIDS || ENABLE_WSEN_ISDS
@@ -229,9 +236,11 @@ void setup()
 #endif
 
     print_init_result("RTC", rtc_init());
+    watchdog_feed();
 
 #if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
     logger_init();
+    watchdog_feed();
 #if ENABLE_SD_LOGGING
     print_init_result("Internal SD", logger_internal_sd_is_ready());
 #endif
@@ -241,24 +250,28 @@ void setup()
 #endif
 #endif
 #if ENABLE_HEATERS
-    heater_init();
     Serial.println("Heaters: OK");
 #endif
 #if ENABLE_MAX31865
     print_init_result("MAX31865", max31865_init());
+    watchdog_feed();
 #endif
 #if ENABLE_THERMAL_CONTROL
     thermal_control_init();
+    watchdog_feed();
     Serial.println("Thermal control: OK");
 #endif
 #if ENABLE_WSEN_PADS
     print_init_result("WSEN-PADS", wsen_pads_init());
+    watchdog_feed();
 #endif
 #if ENABLE_WSEN_HIDS
     print_init_result("WSEN-HIDS", wsen_hids_init());
+    watchdog_feed();
 #endif
 #if ENABLE_WSEN_ISDS
     print_init_result("WSEN-ISDS", wsen_isds_init());
+    watchdog_feed();
 #endif
 #if ENABLE_AIRDOS
     Serial.println("AIRDOS: OK");
@@ -266,16 +279,23 @@ void setup()
 #if ENABLE_ETHERNET
     ethernet_ready = ethernet_link_init();
     print_init_result("Ethernet", ethernet_ready);
+    watchdog_feed();
 #endif
 
     Serial.println("\nInitialization complete.\n");
+    watchdog_feed();
 }
 
 void loop()
 {
     // A USB download intentionally pauses all normal flight activity.
     storage_download_update();
-    if (storage_download_is_active()) return;
+    if (storage_download_is_active())
+    {
+        // Download work is incremental. An idle USB host is not a CPU hang.
+        watchdog_feed();
+        return;
+    }
 
     // Cooperative scheduler: every module decides whether work is due.
     teensy_link_update();
@@ -301,4 +321,6 @@ void loop()
 #endif
     telemetry_update();
     logger_update();
+    // Feed only after the complete scheduler pass, including storage, returns.
+    watchdog_feed();
 }

@@ -47,6 +47,9 @@
 #define ENABLE_AIRDOS          true
 #endif
 
+// Hardware watchdog (both Teensys). WDT1 supports 0.5...128 seconds.
+constexpr uint32_t WATCHDOG_TIMEOUT_SECONDS = 30;
+
 // Timing
 constexpr uint32_t SD_FLUSH_PERIOD_MS = 1000;
 constexpr uint32_t MAX31865_SAMPLE_PERIOD_MS = 1000;
