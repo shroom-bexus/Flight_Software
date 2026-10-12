@@ -22,6 +22,21 @@ Main controllers:
 
 - Teensy 4.1 Primary
 - Teensy 4.1 Secondary
+## Internal Teensy temperatures
+
+Both Teensy 4.1 controllers record the microcontroller's *die temperature*
+(not ambient/box temperature) every 5 seconds via `tempmonGetTemp()`.
+Each board writes `cpu_temperature.csv` to its built-in SD and backup XTSD,
+using `timestamp,time_ms,source,temperature_C`. The Secondary also forwards
+`!T,<temperature_C>` over the existing non-blocking Serial1 link, so the
+Primary stores a redundant copy of the Secondary's received measurements.
+
+The Primary sends `CPU_TEMP,time_ms,PRIMARY|SECONDARY,temperature_C` on the
+existing 60-second housekeeping cadence (also at initial GS connection).
+It only relays Secondary readings received within the last 15 seconds; no
+missing value is reported as 0 °C. A Secondary record on the Primary uses the
+Primary's reception timestamp. This monitoring is never used for heater control.
+
 ## Building
 
 Use PlatformIO from this directory:
