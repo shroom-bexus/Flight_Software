@@ -224,6 +224,8 @@ namespace
 
     // Log files
 
+    MirroredLogFile cpu_temperature_file;
+
 #if ENABLE_MAX31865
     MirroredLogFile max31865_file;
 #endif
@@ -255,6 +257,8 @@ namespace
 
     const LogEntry log_files[] =
     {
+        {&cpu_temperature_file, "cpu_temperature.csv",
+         "timestamp,time_ms,source,temperature_C"},
 #if ENABLE_MAX31865
         {&max31865_file, "max31865.csv",
          "timestamp,time_ms,sensor,temperature_K"},
@@ -423,6 +427,21 @@ bool logger_init()
 
     return internal_sd_ready || backup_sd_ready;
 
+#endif
+}
+
+// On-die temperature (both boards; Secondary additionally mirrored on Primary).
+void logger_log_cpu_temperature(const char* source, float temperature_c)
+{
+#if ENABLE_SD_LOGGING || ENABLE_BACKUP_SD_LOGGING
+    if (!cpu_temperature_file || source == nullptr) return;
+    write_timestamp(cpu_temperature_file);
+    cpu_temperature_file.print(source);
+    cpu_temperature_file.print(',');
+    cpu_temperature_file.println(temperature_c, 2);
+#else
+    (void)source;
+    (void)temperature_c;
 #endif
 }
 
