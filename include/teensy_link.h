@@ -9,6 +9,10 @@ void teensy_link_update();
 // Secondary only. Drop a whole frame if the UART buffer is full; never wait
 // for the primary. The original message has already been logged locally.
 bool teensy_link_send_airdos(uint8_t sensor_id, const char* data);
+// Secondary only: send one non-blocking on-die temperature status frame.
+bool teensy_link_send_cpu_temperature(float temperature_c);
+// Primary only: get the latest valid Secondary reading, fresh within 15 s.
+bool teensy_link_secondary_cpu_temperature(float* temperature_c);
 uint32_t teensy_link_get_error_count();
 
 // Primary only: send a remote erase request to Secondary; one outstanding.
