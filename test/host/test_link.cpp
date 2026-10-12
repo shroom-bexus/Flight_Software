@@ -2,11 +2,19 @@
 #include "airdos.h"
 #include "teensy_link.h"
 #include "config.h"
+#include "logger.h"
 #include <iostream>
 #include <vector>
 #include <utility>
 
 std::vector<std::pair<uint8_t, std::string>> logged, downlinked;
+int erase_count = 0;
+LoggerStorage erased_storage = LoggerStorage::INTERNAL;
+bool logger_erase_storage(LoggerStorage storage) {
+    erased_storage = storage;
+    ++erase_count;
+    return true;
+}
 void logger_log_airdos(uint8_t id, const char* data) { logged.emplace_back(id, data); }
 void telemetry_send_airdos(uint8_t id, const char* data) { downlinked.emplace_back(id, data); }
 
@@ -107,6 +115,32 @@ int main() {
     assert(std::string(teensy_link_storage_state(1)) == "STALE");
     fake_time = 0;
     assert(std::string(teensy_link_storage_state(1)) == "WAITING");
+    // Secondary result is matched by UART token, not just receipt time.
+    assert(teensy_link_request_erase(7, 'B'));
+    assert(!teensy_link_request_erase(8, 'I'));
+    teensy_link_update();
+    const auto frame_position = Serial1.tx.rfind("\n!C,");
+    assert(frame_position != std::string::npos);
+    unsigned long token = 0;
+    char frame_storage = 0;
+    assert(sscanf(Serial1.tx.c_str() + frame_position, "\n!C,%lu,%c",
+        &token, &frame_storage) == 2 && frame_storage == 'B');
+    char ack[48];
+    snprintf(ack, sizeof(ack), "\n!R,%lu,B,1\n", token);
+    Serial1.inject(ack);
+    teensy_link_update();
+    uint16_t id = 0;
+    char storage = 0;
+    const char* result = nullptr;
+    assert(teensy_link_get_erase_result(id, storage, result));
+    assert(id == 7 && storage == 'B' && std::string(result) == "OK");
+    teensy_link_clear_erase_result();
+    assert(teensy_link_request_erase(8, 'I'));
+    fake_time += 13000;
+    teensy_link_update();
+    assert(teensy_link_get_erase_result(id, storage, result));
+    assert(id == 8 && storage == 'I' && std::string(result) == "TIMEOUT");
+    teensy_link_clear_erase_result();
 #else
     // Check physical serial mapping and preservation of comma-rich payloads.
     HardwareSerialIMXRT* inputs[] = {&Serial2, &Serial3, &Serial4, &Serial5,
@@ -144,6 +178,17 @@ int main() {
     fake_time += HEALTH_TELEMETRY_PERIOD_MS;
     teensy_link_update();
     assert(Serial1.tx == before); // Status cannot block when TX is full.
+    Serial1.room = 32768;
+    Serial1.inject("\n!C,42,B\n");
+    teensy_link_update();
+    assert(erase_count == 1 && erased_storage == LoggerStorage::BACKUP);
+    assert(Serial1.tx.find("\n!R,42,B,1\n") != std::string::npos);
+    Serial1.inject("\n!C,42,B\n");
+    teensy_link_update();
+    assert(erase_count == 1); // Duplicate UART command cannot erase again.
+    Serial1.inject("\n!C,43,I\n");
+    teensy_link_update();
+    assert(erase_count == 2 && erased_storage == LoggerStorage::INTERNAL);
 #endif
     std::cout << (FLIGHT_PRIMARY ? "primary" : "secondary") << " host tests passed\n";
 }
