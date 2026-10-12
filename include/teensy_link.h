@@ -11,6 +11,13 @@ void teensy_link_update();
 bool teensy_link_send_airdos(uint8_t sensor_id, const char* data);
 uint32_t teensy_link_get_error_count();
 
+// Primary only: send a remote erase request to Secondary; one outstanding.
+bool teensy_link_request_erase(uint16_t command_id, char storage);
+// Result retained until explicitly cleared following a successful GS send.
+bool teensy_link_get_erase_result(uint16_t& command_id, char& storage,
+                                 const char*& result);
+void teensy_link_clear_erase_result();
+
 // Primary only: reception health for remote AIRDOS IDs 1-7.
 bool teensy_link_has_received(uint8_t sensor_id);
 uint32_t teensy_link_last_received_ms(uint8_t sensor_id);
