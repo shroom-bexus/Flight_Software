@@ -31,6 +31,15 @@ void logger_update();
 
 
 /**
+ * @brief Record a Teensy die temperature on internal and backup SD.
+ *
+ * On the Primary, SECONDARY samples are timestamped on receipt.
+ * @param source "PRIMARY" or "SECONDARY".
+ * @param temperature_c Silicon die temperature in degrees Celsius.
+ */
+void logger_log_cpu_temperature(const char* source, float temperature_c);
+
+/**
  * @brief Log one MAX31865 temperature measurement.
  *
  * @param sensor_id Sensor identifier, starting at 1.
