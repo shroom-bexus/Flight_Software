@@ -8,6 +8,8 @@
 #include <cstring>
 
 #include "config.h"
+#include "logger.h"
+#include "teensy_link.h"
 
 #if ENABLE_ETHERNET
 #include "ethernet_link.h"
@@ -401,10 +403,43 @@ void handle_set_heater(const char* args)
     send_reply("ACK", "SET_HEATER", detail);
 }
 
+// Compact command names preserve the 1 kbit/s uplink burst budget.
+// GS requires an explicit second confirmation before transmitting YES.
+void erase_storage(const char* args, LoggerStorage storage, const char* name,
+                   char storage_code)
+{
+    if (strcmp(args, "YES") != 0)
+    {
+        send_reply("NACK", name, "CONFIRM_REQUIRED");
+        return;
+    }
+    if (!teensy_link_request_erase(active_command_id, storage_code))
+    {
+        send_reply("NACK", name, "BUSY");
+        return;
+    }
+    const bool ok = logger_erase_storage(storage);
+    send_reply(ok ? "ACK" : "WARN", name,
+               ok ? "PRIMARY_OK_SECONDARY_PENDING" :
+                    "PRIMARY_FAILED_SECONDARY_PENDING");
+}
+
+void handle_erase_backup(const char* args)
+{
+    erase_storage(args, LoggerStorage::BACKUP, "ERASE_B", 'B');
+}
+
+void handle_erase_internal(const char* args)
+{
+    erase_storage(args, LoggerStorage::INTERNAL, "ERASE_I", 'I');
+}
+
 // Add new commands by defining a handler and adding one table entry.
 const CommandEntry command_table[] =
 {
     {"PING", handle_ping},
+    {"ERASE_B", handle_erase_backup},
+    {"ERASE_I", handle_erase_internal},
     {"SET_TARGET", handle_set_target},
     {"THERMAL_ON", handle_thermal_on},
     {"THERMAL_OFF", handle_thermal_off},
