@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <utility>
+#include <limits>
 
 std::vector<std::pair<uint8_t, std::string>> logged, downlinked;
 std::vector<std::pair<std::string, float>> cpu_logged;
