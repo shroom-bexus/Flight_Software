@@ -286,6 +286,19 @@ void loop()
     update_isds();
     update_airdos();
     teensy_link_update();
+#if ENABLE_ETHERNET
+    uint16_t erase_id = 0;
+    char storage = 0;
+    const char* result = nullptr;
+    if (teensy_link_get_erase_result(erase_id, storage, result))
+    {
+        char message[80];
+        snprintf(message, sizeof(message), "ERASE_RESULT,%u,SECONDARY,%s,%s",
+            erase_id, storage == 'I' ? "INTERNAL" : "BACKUP", result);
+        if (ethernet_link_send_priority_line(message))
+            teensy_link_clear_erase_result();
+    }
+#endif
     telemetry_update();
     logger_update();
 }
